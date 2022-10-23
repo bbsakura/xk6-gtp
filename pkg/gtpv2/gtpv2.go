@@ -13,7 +13,6 @@ import (
 type K6GTPv2 struct {
 	Version string
 	Conn    *gtpv2.Conn
-	Ctx     context.Context
 }
 
 type ConnectionOptions struct {
@@ -44,7 +43,7 @@ func (c *K6GTPv2) Connect(options ConnectionOptions) error {
 	}
 
 	conn, err := gtpv2.Dial(
-		c.Ctx,
+		context.Background(),
 		saddr,
 		daddr,
 		uint8(iftype),
@@ -65,37 +64,45 @@ func (c *K6GTPv2) SendEchoRequest(daddr string) (uint32, error) {
 	return c.Conn.EchoRequest(d)
 }
 
-func (c *K6GTPv2) SendEchoRequestWithCheckEchoResponce(daddr string) error {
+func (c *K6GTPv2) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
 	if _, err := c.SendEchoRequest(daddr); err != nil {
-		return err
+		return false, err
 	}
-	return c.RecvEchoResponce()
+	return c.CheckRecvEchoResponse()
 }
 
-func (c *K6GTPv2) RecvEchoResponce() error {
+func (c *K6GTPv2) CheckRecvEchoResponse() (bool, error) {
 	var err error
 	buf := make([]byte, 1500)
 
 	// if no response coming within 3 seconds, returns error without retrying.
 	if err := c.Conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
-		return 0, err
+		return false, err
 	}
 	n, _, err := c.Conn.ReadFrom(buf)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := c.Conn.SetReadDeadline(time.Time{}); err != nil {
-		return err
+		return false, err
 	}
 
 	// decode incoming message and let it be handled by default handler funcs.
 	msg, err := message.Parse(buf[:n])
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if _, ok := msg.(*message.EchoResponse); !ok {
-		return 0, &gtpv2.UnexpectedTypeError{Msg: msg}
+		return false, &gtpv2.UnexpectedTypeError{Msg: msg}
+	}
+	return true, nil
+}
+
+func (c *K6GTPv2) Close() error {
+	err := c.Conn.Close()
+	if err != nil {
+		return err
 	}
 	return nil
 }
