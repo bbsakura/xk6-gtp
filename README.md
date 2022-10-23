@@ -5,7 +5,7 @@ Client extension for interacting with a use GTP proto of your k6 test.
 ```shell=
 go install github.com/dmarkham/enumer@latest
 go install go.k6.io/xk6/cmd/xk6@latest
-xk6 build --with github.com/takehaya/xk6-gtp/cmd/xk6-gtpv2@latest
+make
 ```
 
 ## support scenario
