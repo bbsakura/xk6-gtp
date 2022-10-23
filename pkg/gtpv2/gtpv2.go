@@ -75,7 +75,6 @@ func (c *K6GTPv2) CheckRecvEchoResponse() (bool, error) {
 	var err error
 	buf := make([]byte, 1500)
 
-	// if no response coming within 3 seconds, returns error without retrying.
 	if err := c.Conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		return false, err
 	}
@@ -87,7 +86,6 @@ func (c *K6GTPv2) CheckRecvEchoResponse() (bool, error) {
 		return false, err
 	}
 
-	// decode incoming message and let it be handled by default handler funcs.
 	msg, err := message.Parse(buf[:n])
 	if err != nil {
 		return false, err
