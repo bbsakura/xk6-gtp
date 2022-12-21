@@ -5,7 +5,7 @@ export function setup() {
         saddr: 'SRC_IP',
         daddr: "DST_IP",
         count: "RETRY_NUM",
-        IFTypeName: "IFTypeS11MMEGTPC"
+        IFTypeName: "IFTypeS5S8PGWGTPC"
     })
     console.log("setup");
 }

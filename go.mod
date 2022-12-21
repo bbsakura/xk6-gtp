@@ -3,8 +3,8 @@ module github.com/takehaya/xk6-gtp
 go 1.19
 
 require (
+	github.com/wmnsk/go-gtp v0.8.6
 	go.k6.io/k6 v0.40.0
-	golang.org/x/crypto v0.1.0
 )
 
 require (
@@ -21,6 +21,10 @@ require (
 	github.com/serenize/snaker v0.0.0-20201027110005-a7ad2135616e // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/afero v1.1.2 // indirect
+	github.com/vishvananda/netlink v1.1.0 // indirect
+	github.com/vishvananda/netns v0.0.0-20211101163701-50045581ed74 // indirect
+	golang.org/x/crypto v0.1.0 // indirect
+	golang.org/x/net v0.1.0 // indirect
 	golang.org/x/sys v0.1.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858 // indirect
