@@ -1,11 +1,27 @@
 # xk6-gtp
 Client extension for interacting with a use GTP proto of your k6 test.
+🚧 This project WIP... 🚧
+
+## Prepair
+require asdf installed.
+[how to asdf install](https://asdf-vm.com/guide/getting-started.html#_2-download-asdf)
+
+Install tools required for development.
+```shell=
+make install-dev-pkg
+```
 
 ## Build
 ```shell=
-go install github.com/dmarkham/enumer@latest
-go install go.k6.io/xk6/cmd/xk6@latest
-make
+make install-go-tools
+make build
+```
+
+## Test Running
+```shell
+./out/bin/xk6gtp run example/echo-stress.js
+
+./out/bin/pgw
 ```
 
 ## Support scenario
@@ -19,3 +35,9 @@ make
 
 ##　Special thanks
 This PoC takes full advantage of [go-gtp](https://github.com/wmnsk/go-gtp). Thanks to the @wmnsk and developer all.
+
+## Developers Settings
+
+```shell
+pre-commit install
+```

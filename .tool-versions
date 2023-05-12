@@ -1,0 +1,5 @@
+golang 1.20.4
+python 3.11.3
+pre-commit 2.21.0
+direnv 2.32.2
+jq 1.6

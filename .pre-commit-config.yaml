@@ -1,0 +1,28 @@
+exclude: "^docs/|^vendor|^.vscode"
+default_stages: [commit, manual]
+
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.4.0
+  hooks:
+    - id: check-case-conflict
+    - id: check-executables-have-shebangs
+    - id: trailing-whitespace
+    - id: check-yaml
+    - id: check-json
+    - id: check-toml
+    - id: mixed-line-ending
+    - id: detect-private-key
+- repo: https://github.com/domodwyer/pre-commit
+  rev: v3.5.0
+  hooks:
+    - id: branch-name-check
+      stages: [push]
+- repo: https://github.com/TekWizely/pre-commit-golang
+  rev: v1.0.0-rc.1
+  hooks:
+    - id: go-fmt
+    - id: go-vet-mod
+    - id: go-staticcheck-repo-mod
+    - id: go-imports
+

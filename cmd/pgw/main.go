@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	s5c = flag.String("s5c", "127.0.0.52", "IP for S5-C interface.")
-	s5u = flag.String("s5u", "127.0.0.4", "IP for S5-U interface.")
+	s5c = flag.String("s5c", "127.0.0.1", "IP for S5-C interface.")
+	s5u = flag.String("s5u", "127.0.0.1", "IP for S5-U interface.")
 )
 
 func main() {
