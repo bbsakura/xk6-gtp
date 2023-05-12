@@ -1,5 +1,6 @@
 import gtpv2 from 'k6/x/gtpv2';
 
+// pseudo sgw
 export function setup() {
     gtpv2.connect({
         saddr: 'SRC_IP',
@@ -10,9 +11,11 @@ export function setup() {
     console.log("setup");
 }
 
-
 export default function () {
-    const res = gtpv2.send_echo_request_with_check_echo_response("DST_IP")
+    const res = gtpv2.SendCreateSessionRequestS5S8(
+        "DST_IP",
+        {},
+    )
     check (res, {
         'success': (res) => true === res,
     });
