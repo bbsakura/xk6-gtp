@@ -25,4 +25,11 @@ repos:
     - id: go-vet-mod
     - id: go-staticcheck-repo-mod
     - id: go-imports
-
+- repo: local
+  hooks:
+  - id: Conventional Commits check
+    name: commit message should have type prefix
+    language: pygrep
+    entry: '^(feat|fix|docs|style|refactor|perf|test|chore|ci)((?:\([^\)]*\))|)!?:(?:\s*)'
+    args: [--multiline, --negate]
+    stages: [commit-msg]
