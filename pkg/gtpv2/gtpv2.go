@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/wmnsk/go-gtp/gtpv2"
 	"github.com/wmnsk/go-gtp/gtpv2/ie"
 	"github.com/wmnsk/go-gtp/gtpv2/message"
@@ -50,23 +51,23 @@ type ConnectionOptions struct {
 	IFTypeName string
 }
 
-func (c *K6GTPv2) Connect(options ConnectionOptions) error {
+func (c *K6GTPv2) Connect(options ConnectionOptions) (*gtpv2.Conn, error) {
 	var err error
-	saddr, err := net.ResolveIPAddr("ip", options.Saddr)
+	saddr, err := net.ResolveUDPAddr("udp", options.Saddr)
 	if err != nil {
-		return fmt.Errorf("resolve ip error")
+		return nil, errors.WithMessage(err, "resolve udp error")
 	}
 
-	daddr, err := net.ResolveIPAddr("ip", options.Daddr)
+	daddr, err := net.ResolveUDPAddr("udp", options.Daddr)
 	if err != nil {
-		return fmt.Errorf("resolve ip error")
+		return nil, errors.WithMessage(err, "resolve udp error")
 	}
 
 	iftype := IFTypeS11MMEGTPC
 	if options.IFTypeName != "" {
 		iftype, err = EnumIFTypeString(options.IFTypeName)
 		if err != nil {
-			return fmt.Errorf("invalid IFTypeName")
+			return nil, errors.WithMessage(err, "invalid IFTypeName")
 		}
 	}
 
@@ -78,7 +79,7 @@ func (c *K6GTPv2) Connect(options ConnectionOptions) error {
 		uint8(options.Count),
 	)
 	if err != nil {
-		return err
+		return nil, errors.WithMessage(err, "failed to gtpv2 dial")
 	}
 	c.Conn = conn
 
@@ -110,15 +111,15 @@ func (c *K6GTPv2) Connect(options ConnectionOptions) error {
 		MEI:    "9999000000000101",
 		ULI:    "9999000000000101",
 	}
-	return nil
+	return conn, nil
 }
 
-func (c *K6GTPv2) SendEchoRequest(daddr string) (uint32, error) {
-	d, err := net.ResolveIPAddr("ip", daddr)
+func (c *K6GTPv2) SendEchoRequest(conn *gtpv2.Conn, daddr string) (uint32, error) {
+	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
-		return 0, fmt.Errorf("resolve ip error")
+		return 0, errors.WithMessage(err, "resolve udp error")
 	}
-	return c.Conn.EchoRequest(d)
+	return conn.EchoRequest(d)
 }
 
 func (c *K6GTPv2) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*gtpv2.Session, uint32, error) {
@@ -190,25 +191,25 @@ func (c *K6GTPv2) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwPara
 // 	return options
 // }
 
-func (c *K6GTPv2) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
-	if _, err := c.SendEchoRequest(daddr); err != nil {
+func (c *K6GTPv2) CheckSendEchoRequestWithReturnResponse(conn *gtpv2.Conn, daddr string) (bool, error) {
+	if _, err := c.SendEchoRequest(conn, daddr); err != nil {
 		return false, err
 	}
-	return c.CheckRecvEchoResponse()
+	return c.CheckRecvEchoResponse(conn)
 }
 
-func (c *K6GTPv2) CheckRecvEchoResponse() (bool, error) {
+func (c *K6GTPv2) CheckRecvEchoResponse(conn *gtpv2.Conn) (bool, error) {
 	var err error
 	buf := make([]byte, 1500)
 
-	if err := c.Conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		return false, err
 	}
-	n, _, err := c.Conn.ReadFrom(buf)
+	n, _, err := conn.ReadFrom(buf)
 	if err != nil {
 		return false, err
 	}
-	if err := c.Conn.SetReadDeadline(time.Time{}); err != nil {
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
 		return false, err
 	}
 

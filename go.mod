@@ -5,7 +5,8 @@ go 1.19
 require (
 	github.com/dmarkham/enumer v1.5.8
 	github.com/elisescu/tty-share v0.6.2
-	github.com/erkanzileli/co-author v0.0.5
+	github.com/erkanzileli/co-author v0.0.2
+	github.com/pkg/errors v0.9.1
 	github.com/wmnsk/go-gtp v0.8.6
 	go.k6.io/k6 v0.40.0
 	go.k6.io/xk6 v0.9.1
@@ -39,7 +40,6 @@ require (
 	github.com/onsi/gomega v1.22.1 // indirect
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c // indirect
 	github.com/pascaldekloe/name v1.0.0 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/sahilm/fuzzy v0.1.0 // indirect
 	github.com/serenize/snaker v0.0.0-20201027110005-a7ad2135616e // indirect

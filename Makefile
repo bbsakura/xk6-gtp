@@ -5,9 +5,7 @@ GOVET=$(GOCMD) vet
 #brunch name version
 VERSION := $(shell git rev-parse --abbrev-ref HEAD)
 DOCKER_REGISTRY?= #if set it should finished by /
-CLANG ?= clang-14
-CFLAGS := -O2 -g -Wall -Werror $(CFLAGS)
-DIFF_FROM_BRANCH_NAME ?= origin/master
+DIFF_FROM_BRANCH_NAME ?= origin/main
 
 ENTRY_POINT_DIR=cmd
 TARGETS=$(notdir $(wildcard $(ENTRY_POINT_DIR)/*))

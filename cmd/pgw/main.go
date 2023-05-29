@@ -12,15 +12,16 @@ import (
 )
 
 var (
-	s5c = flag.String("s5c", "127.0.0.1", "IP for S5-C interface.")
-	s5u = flag.String("s5u", "127.0.0.1", "IP for S5-U interface.")
+	s5c     = flag.String("s5c", "127.0.0.1", "IP for S5-C interface.")
+	s5u     = flag.String("s5u", "127.0.0.1", "IP for S5-U interface.")
+	s5cport = flag.String("cport", gtpv2.GTPCPort, "GTP CPort")
 )
 
 func main() {
 	flag.Parse()
 	log.SetPrefix("[P-GW] ")
 
-	s5cAddr, err := net.ResolveUDPAddr("udp", *s5c+gtpv2.GTPCPort)
+	s5cAddr, err := net.ResolveUDPAddr("udp", *s5c+*s5cport)
 	if err != nil {
 		log.Println(err)
 		return
@@ -43,6 +44,7 @@ func main() {
 	s5cConn.AddHandlers(map[uint8]gtpv2.HandlerFunc{
 		message.MsgTypeCreateSessionRequest: handleCreateSessionRequest,
 		message.MsgTypeDeleteSessionRequest: handleDeleteSessionRequest,
+		message.MsgTypeEchoRequest:          handleEchoRequest,
 	})
 
 	for {

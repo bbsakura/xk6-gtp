@@ -1,18 +1,26 @@
 import gtpv2 from 'k6/x/gtpv2';
 
+let conn;
 export function setup() {
-    gtpv2.connect({
-        saddr: 'SRC_IP',
-        daddr: "DST_IP",
-        count: "RETRY_NUM",
-        IFTypeName: "IFTypeS5S8PGWGTPC"
-    })
+    // conn = gtpv2.connect({
+    //     saddr: "127.0.0.1:2124",
+    //     daddr: "127.0.0.1:2123",
+    //     count: 0,
+    //     IFTypeName: "IFTypeS5S8PGWGTPC"
+    // });
     console.log("setup");
 }
 
 
 export default function () {
-    const res = gtpv2.send_echo_request_with_check_echo_response("DST_IP")
+    conn = gtpv2.connect({
+        saddr: "127.0.0.1:2124",
+        daddr: "127.0.0.1:2123",
+        count: 0,
+        IFTypeName: "IFTypeS5S8PGWGTPC"
+    });
+
+    const res = gtpv2.checkSendEchoRequestWithReturnResponse(conn, "127.0.0.1:2123")
     check (res, {
         'success': (res) => true === res,
     });

@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"strings"
 
@@ -33,6 +34,20 @@ var (
 
 	uConn *gtpv1.UPlaneConn
 )
+
+func handleEchoRequest(c *gtpv2.Conn, senderAddr net.Addr, msg message.Message) error {
+	// this should never happen, as the type should have been assured by
+	// msgHandlerMap before this function is called.
+	if _, ok := msg.(*message.EchoRequest); !ok {
+		return &gtpv2.UnexpectedTypeError{Msg: msg}
+	}
+	log.Printf("senderAddr: %s,received: %v\n", senderAddr, msg)
+
+	// respond with EchoResponse.
+	return c.RespondTo(
+		senderAddr, msg, message.NewEchoResponse(0, ie.NewRecovery(c.RestartCounter)),
+	)
+}
 
 func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Message) error {
 	loggerCh <- fmt.Sprintf("Received %s from %s", msg.MessageTypeName(), sgwAddr)
@@ -109,7 +124,7 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 		return &gtpv2.RequiredIEMissingError{Type: ie.RATType}
 	}
 
-	// SGW TEID
+	// SGW TEID cplane
 	if fteidcIE := csReqFromSGW.SenderFTEIDC; fteidcIE != nil {
 		teid, err := fteidcIE.TEID()
 		if err != nil {
@@ -120,17 +135,18 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 		return &gtpv2.RequiredIEMissingError{Type: ie.FullyQualifiedTEID}
 	}
 
-	var teidOut uint32
+	// var teidOut uint32
 	if brCtxIE := csReqFromSGW.BearerContextsToBeCreated; brCtxIE != nil {
 		for _, childIE := range brCtxIE[0].ChildIEs {
 			switch childIE.Type {
 			case ie.EPSBearerID:
-				// 誰が生成したのか謎だけどUE-PGWを結ぶBearer
+				// EBI: 2個め以降のbearerを取ることができる.例えば音声用とか
 				bearer.EBI, err = childIE.EPSBearerID()
 				if err != nil {
 					return err
 				}
-			case ie.FullyQualifiedTEID:
+
+			case ie.FullyQualifiedTEID: // sgw teid uplane
 				it, err := childIE.InterfaceType()
 				if err != nil {
 					return err
@@ -197,28 +213,28 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 		return err
 	}
 
-	go func() {
-		buf := make([]byte, 1500)
-		for {
-			n, raddr, _, err := uConn.ReadFromGTP(buf)
-			if err != nil {
-				return
-			}
+	// go func() {
+	// 	buf := make([]byte, 1500)
+	// 	for {
+	// 		n, raddr, _, err := uConn.ReadFromGTP(buf)
+	// 		if err != nil {
+	// 			return
+	// 		}
 
-			rsp := make([]byte, n)
-			// update message type and checksum
-			copy(rsp, buf[:n])
-			rsp[20] = 0
-			rsp[22] = 0x9b
-			// swap IP
-			copy(rsp[12:16], buf[16:20])
-			copy(rsp[16:20], buf[12:16])
+	// 		rsp := make([]byte, n)
+	// 		// update message type and checksum
+	// 		copy(rsp, buf[:n])
+	// 		rsp[20] = 0
+	// 		rsp[22] = 0x9b
+	// 		// swap IP
+	// 		copy(rsp[12:16], buf[16:20])
+	// 		copy(rsp[16:20], buf[12:16])
 
-			if _, err := uConn.WriteToGTP(teidOut, rsp, raddr); err != nil {
-				return
-			}
-		}
-	}()
+	// 		if _, err := uConn.WriteToGTP(teidOut, rsp, raddr); err != nil {
+	// 			return
+	// 		}
+	// 	}
+	// }()
 
 	loggerCh <- fmt.Sprintf("Session created with S-GW for subscriber: %s;\n\tS5C S-GW: %s, TEID->: %#x, TEID<-: %#x",
 		session.Subscriber.IMSI, sgwAddr, s5sgwTEID, s5pgwTEID,
