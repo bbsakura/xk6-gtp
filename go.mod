@@ -4,8 +4,9 @@ go 1.19
 
 require (
 	github.com/dmarkham/enumer v1.5.8
+	github.com/dop251/goja v0.0.0-20220815083517-0c74f9139fd6
 	github.com/elisescu/tty-share v0.6.2
-	github.com/erkanzileli/co-author v0.0.2
+	github.com/erkanzileli/co-author v0.0.7
 	github.com/pkg/errors v0.9.1
 	github.com/wmnsk/go-gtp v0.8.6
 	go.k6.io/k6 v0.40.0
@@ -23,7 +24,6 @@ require (
 	github.com/charmbracelet/lipgloss v0.4.0 // indirect
 	github.com/containerd/console v1.0.3 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
-	github.com/dop251/goja v0.0.0-20220815083517-0c74f9139fd6 // indirect
 	github.com/elisescu/pty v1.0.2 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4-0.20211119122758-180fcef48034+incompatible // indirect

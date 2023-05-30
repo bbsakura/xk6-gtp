@@ -1,28 +1,17 @@
+import { check } from 'k6';
 import gtpv2 from 'k6/x/gtpv2';
+const client = new gtpv2.K6GTPv2Client();
 
-let conn;
-export function setup() {
-    // conn = gtpv2.connect({
-    //     saddr: "127.0.0.1:2124",
-    //     daddr: "127.0.0.1:2123",
-    //     count: 0,
-    //     IFTypeName: "IFTypeS5S8PGWGTPC"
-    // });
-    console.log("setup");
-}
-
-
-export default function () {
-    conn = gtpv2.connect({
+export default function (){
+    client.connect({
         saddr: "127.0.0.1:2124",
         daddr: "127.0.0.1:2123",
         count: 0,
         IFTypeName: "IFTypeS5S8PGWGTPC"
     });
-
-    const res = gtpv2.checkSendEchoRequestWithReturnResponse(conn, "127.0.0.1:2123")
+    const res = client.checkSendEchoRequestWithReturnResponse("127.0.0.1:2123")
     check (res, {
         'success': (res) => true === res,
     });
-    gtpv2.close()
+    client.close()
 }

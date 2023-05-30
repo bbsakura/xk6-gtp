@@ -21,7 +21,7 @@ RESET  := $(shell tput -Txterm sgr0)
 all: help
 
 ## Build:
-build: make_outdir single_target $(TARGETS) ## Build your project and put the output binary in out/bin/
+build: make_outdir single_target $(TARGETS) xk6build ## Build your project and put the output binary in out/bin/
 make_outdir:
 	mkdir -p out/bin
 
