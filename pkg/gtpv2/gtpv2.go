@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/dop251/goja"
@@ -66,12 +67,17 @@ type K6GTPv2Client struct {
 	vu        modules.VU
 	GenParams GenerateBaseParams
 	Conn      *gtpv2.Conn
+	sessions  *sync.Map
 }
 
 // NewClient is the JS constructor for the grpc Client.
 func (c *ModuleInstance) NewK6GTPv2Client(call goja.ConstructorCall) *goja.Object {
 	rt := c.vu.Runtime()
-	return rt.ToValue(&K6GTPv2Client{vu: c.vu}).ToObject(rt)
+	cli := &K6GTPv2Client{
+		vu:       c.vu,
+		sessions: &sync.Map{},
+	}
+	return rt.ToValue(cli).ToObject(rt)
 }
 
 func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
@@ -104,6 +110,7 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 	if err != nil {
 		return false, errors.WithMessage(err, "failed to gtpv2 dial")
 	}
+	setHandlers(conn, c.sessions)
 
 	// ie := map[uint8]gtp2c.InfomationElement{
 	// 	gtp2c.IMSIType:           gtp2c.NewIMSIIE(generateIMSI(imsiTail)),
@@ -134,6 +141,36 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 		ULI:    "9999000000000101",
 	}
 	return false, nil
+}
+
+func GetMessage[PT *T, T any](ctx context.Context, sessions *sync.Map, msgType uint8, seq uint32) (PT, error) {
+	for {
+		// TODO reduce cpu usage
+		select {
+		case <-ctx.Done():
+			return (PT)(nil), ctx.Err()
+		default:
+			if msg, ok := sessions.Load(sessionKey{MessageType: msgType, Sequence: seq}); ok {
+				return msg.(PT), nil
+			}
+		}
+	}
+}
+
+func setHandlers(conn *gtpv2.Conn, sessions *sync.Map) {
+	conn.AddHandler(message.MsgTypeEchoResponse, GetHandler(sessions, message.MsgTypeEchoResponse))
+}
+
+type sessionKey struct {
+	MessageType uint8
+	Sequence    uint32
+}
+
+func GetHandler(dst *sync.Map, msgType uint8) func(c *gtpv2.Conn, senderAddr net.Addr, msg message.Message) error {
+	return func(c *gtpv2.Conn, senderAddr net.Addr, msg message.Message) error {
+		dst.Store(sessionKey{MessageType: msgType, Sequence: msg.Sequence()}, msg)
+		return nil
+	}
 }
 
 func (c *K6GTPv2Client) Exports() *goja.Object {
@@ -220,34 +257,19 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 // }
 
 func (c *K6GTPv2Client) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
-	if _, err := c.SendEchoRequest(daddr); err != nil {
+	seq, err := c.SendEchoRequest(daddr)
+	if err != nil {
 		return false, err
 	}
-	return c.CheckRecvEchoResponse()
+	return c.CheckRecvEchoResponse(seq)
 }
 
-func (c *K6GTPv2Client) CheckRecvEchoResponse() (bool, error) {
-	var err error
-	buf := make([]byte, 1500)
-
-	if err := c.Conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
-		return false, err
-	}
-	n, _, err := c.Conn.ReadFrom(buf)
+func (c *K6GTPv2Client) CheckRecvEchoResponse(seq uint32) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := GetMessage[*message.EchoResponse](ctx, c.sessions, message.MsgTypeEchoResponse, seq)
 	if err != nil {
 		return false, err
-	}
-	if err := c.Conn.SetReadDeadline(time.Time{}); err != nil {
-		return false, err
-	}
-
-	msg, err := message.Parse(buf[:n])
-	if err != nil {
-		return false, err
-	}
-
-	if _, ok := msg.(*message.EchoResponse); !ok {
-		return false, &gtpv2.UnexpectedTypeError{Msg: msg}
 	}
 	return true, nil
 }
