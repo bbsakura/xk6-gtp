@@ -1,20 +1,22 @@
+import { check } from 'k6';
+import exec from 'k6/execution';
+
 import gtpv2 from 'k6/x/gtpv2';
 
-export function setup() {
-    gtpv2.connect({
-        saddr: 'SRC_IP',
-        daddr: "DST_IP",
-        count: "RETRY_NUM",
-        IFTypeName: "IFTypeS5S8PGWGTPC"
-    })
-    console.log("setup");
-}
+let client;
 
-
-export default function () {
-    const res = gtpv2.send_echo_request_with_check_echo_response("DST_IP")
+export default function (){
+    if (client == null) {
+        client = new gtpv2.K6GTPv2Client();
+        client.connect({
+            saddr: `127.0.0.${exec.vu.idInTest}:2124`,
+            daddr: "127.0.0.1:2123",
+            count: 0,
+            IFTypeName: "IFTypeS5S8PGWGTPC"
+        });
+    }
+    const res = client.checkSendEchoRequestWithReturnResponse("127.0.0.1:2123")
     check (res, {
         'success': (res) => true === res,
     });
-    gtpv2.close()
 }

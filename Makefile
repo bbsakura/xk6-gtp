@@ -5,9 +5,7 @@ GOVET=$(GOCMD) vet
 #brunch name version
 VERSION := $(shell git rev-parse --abbrev-ref HEAD)
 DOCKER_REGISTRY?= #if set it should finished by /
-CLANG ?= clang-14
-CFLAGS := -O2 -g -Wall -Werror $(CFLAGS)
-DIFF_FROM_BRANCH_NAME ?= origin/master
+DIFF_FROM_BRANCH_NAME ?= origin/main
 
 ENTRY_POINT_DIR=cmd
 TARGETS=$(notdir $(wildcard $(ENTRY_POINT_DIR)/*))
@@ -23,7 +21,7 @@ RESET  := $(shell tput -Txterm sgr0)
 all: help
 
 ## Build:
-build: make_outdir single_target $(TARGETS) ## Build your project and put the output binary in out/bin/
+build: make_outdir single_target $(TARGETS) xk6build ## Build your project and put the output binary in out/bin/
 make_outdir:
 	mkdir -p out/bin
 
@@ -81,7 +79,7 @@ help: ## Show this help.
 	@echo ''
 	@echo 'Targets:'
 	@awk 'BEGIN {FS = ":.*?## "} { \
-		if (/^[a-zA-Z_-]+:.*?##.*$$/) {printf "    ${YELLOW}%-20s${GREEN}%s${RESET}\n", $$1, $$2} \
+		if (/^[a-zA-Z_0-9-]+:.*?##.*$$/) {printf "    ${YELLOW}%-20s${GREEN}%s${RESET}\n", $$1, $$2} \
 		else if (/^## .*$$/) {printf "  ${CYAN}%s${RESET}\n", substr($$1,4)} \
 		}' $(MAKEFILE_LIST)
 

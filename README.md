@@ -41,7 +41,6 @@ This PoC takes full advantage of [go-gtp](https://github.com/wmnsk/go-gtp). Than
 ```shell
 # fmt, lint, commitmessage validate...etc checker
 pre-commit install
-pre-commit install --hook-type commit-msg
 
 # mob programing
 co-author hook > .git/hooks/prepare-commit-msg

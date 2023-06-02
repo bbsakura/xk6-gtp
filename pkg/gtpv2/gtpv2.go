@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
+	"github.com/dop251/goja"
+	"github.com/pkg/errors"
 	"github.com/wmnsk/go-gtp/gtpv2"
 	"github.com/wmnsk/go-gtp/gtpv2/ie"
 	"github.com/wmnsk/go-gtp/gtpv2/message"
@@ -14,33 +17,43 @@ import (
 
 const version = "v0.0.1"
 
-type RootModule struct{}
+type (
+	// RootModule is the global module instance that will create module
+	// instances for each VU.
+	RootModule struct{}
+
+	// ModuleInstance represents an instance of the GRPC module for every VU.
+	ModuleInstance struct {
+		Version string
+		vu      modules.VU
+		exports map[string]interface{}
+	}
+)
 
 var (
 	_ modules.Module   = &RootModule{}
-	_ modules.Instance = &K6GTPv2{}
+	_ modules.Instance = &ModuleInstance{}
 )
-
-type K6GTPv2 struct {
-	Version   string
-	vu        modules.VU
-	GenParams GenerateBaseParams
-	Conn      *gtpv2.Conn
-}
 
 // NewModuleInstance implements the modules.Module interface to return
 // a new instance for each VU.
 func (*RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
-	return &K6GTPv2{
-		vu:      vu,
+	mi := &ModuleInstance{
 		Version: version,
+		vu:      vu,
+		exports: make(map[string]interface{}),
 	}
+
+	mi.exports["K6GTPv2Client"] = mi.NewK6GTPv2Client
+	return mi
 }
 
 // Exports implements the modules.Instance interface and returns the exports
 // of the JS module.
-func (c *K6GTPv2) Exports() modules.Exports {
-	return modules.Exports{Default: c}
+func (mi *ModuleInstance) Exports() modules.Exports {
+	return modules.Exports{
+		Named: mi.exports,
+	}
 }
 
 type ConnectionOptions struct {
@@ -50,23 +63,40 @@ type ConnectionOptions struct {
 	IFTypeName string
 }
 
-func (c *K6GTPv2) Connect(options ConnectionOptions) error {
+type K6GTPv2Client struct {
+	vu        modules.VU
+	GenParams GenerateBaseParams
+	Conn      *gtpv2.Conn
+	sessions  *sync.Map
+}
+
+// NewClient is the JS constructor for the grpc Client.
+func (c *ModuleInstance) NewK6GTPv2Client(call goja.ConstructorCall) *goja.Object {
+	rt := c.vu.Runtime()
+	cli := &K6GTPv2Client{
+		vu:       c.vu,
+		sessions: &sync.Map{},
+	}
+	return rt.ToValue(cli).ToObject(rt)
+}
+
+func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 	var err error
-	saddr, err := net.ResolveIPAddr("ip", options.Saddr)
+	saddr, err := net.ResolveUDPAddr("udp", options.Saddr)
 	if err != nil {
-		return fmt.Errorf("resolve ip error")
+		return false, errors.WithMessage(err, "resolve udp error")
 	}
 
-	daddr, err := net.ResolveIPAddr("ip", options.Daddr)
+	daddr, err := net.ResolveUDPAddr("udp", options.Daddr)
 	if err != nil {
-		return fmt.Errorf("resolve ip error")
+		return false, errors.WithMessage(err, "resolve udp error")
 	}
 
 	iftype := IFTypeS11MMEGTPC
 	if options.IFTypeName != "" {
 		iftype, err = EnumIFTypeString(options.IFTypeName)
 		if err != nil {
-			return fmt.Errorf("invalid IFTypeName")
+			return false, errors.WithMessage(err, "invalid IFTypeName")
 		}
 	}
 
@@ -78,9 +108,9 @@ func (c *K6GTPv2) Connect(options ConnectionOptions) error {
 		uint8(options.Count),
 	)
 	if err != nil {
-		return err
+		return false, errors.WithMessage(err, "failed to gtpv2 dial")
 	}
-	c.Conn = conn
+	setHandlers(conn, c.sessions)
 
 	// ie := map[uint8]gtp2c.InfomationElement{
 	// 	gtp2c.IMSIType:           gtp2c.NewIMSIIE(generateIMSI(imsiTail)),
@@ -103,25 +133,61 @@ func (c *K6GTPv2) Connect(options ConnectionOptions) error {
 	// 	}),
 	// 	gtp2c.RecoveryType: gtp2c.NewRecoveryIE(0),
 	// }
-
+	c.Conn = conn
 	c.GenParams = GenerateBaseParams{
 		IMSI:   "454060000000000",
 		MSISDN: "852000111111",
 		MEI:    "9999000000000101",
 		ULI:    "9999000000000101",
 	}
-	return nil
+	return false, nil
 }
 
-func (c *K6GTPv2) SendEchoRequest(daddr string) (uint32, error) {
-	d, err := net.ResolveIPAddr("ip", daddr)
+func GetMessage[PT *T, T any](ctx context.Context, sessions *sync.Map, msgType uint8, seq uint32) (PT, error) {
+	for {
+		// TODO reduce cpu usage
+		select {
+		case <-ctx.Done():
+			return (PT)(nil), ctx.Err()
+		default:
+			if msg, ok := sessions.Load(sessionKey{MessageType: msgType, Sequence: seq}); ok {
+				return msg.(PT), nil
+			}
+		}
+	}
+}
+
+func setHandlers(conn *gtpv2.Conn, sessions *sync.Map) {
+	conn.AddHandler(message.MsgTypeEchoResponse, GetHandler(sessions, message.MsgTypeEchoResponse))
+}
+
+type sessionKey struct {
+	MessageType uint8
+	Sequence    uint32
+}
+
+func GetHandler(dst *sync.Map, msgType uint8) func(c *gtpv2.Conn, senderAddr net.Addr, msg message.Message) error {
+	return func(c *gtpv2.Conn, senderAddr net.Addr, msg message.Message) error {
+		dst.Store(sessionKey{MessageType: msgType, Sequence: msg.Sequence()}, msg)
+		return nil
+	}
+}
+
+func (c *K6GTPv2Client) Exports() *goja.Object {
+	rt := c.vu.Runtime()
+
+	return rt.ToValue(c).ToObject(rt)
+}
+
+func (c *K6GTPv2Client) SendEchoRequest(daddr string) (uint32, error) {
+	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
-		return 0, fmt.Errorf("resolve ip error")
+		return 0, errors.WithMessage(err, "resolve udp error")
 	}
 	return c.Conn.EchoRequest(d)
 }
 
-func (c *K6GTPv2) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*gtpv2.Session, uint32, error) {
+func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*gtpv2.Session, uint32, error) {
 	d, err := net.ResolveIPAddr("ip", daddr)
 	if err != nil {
 		return nil, 0, fmt.Errorf("resolve ip error")
@@ -159,7 +225,7 @@ type GenerateBaseParams struct {
 	APN    string
 }
 
-func (c *K6GTPv2) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, error) {
+func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, error) {
 	d, err := net.ResolveIPAddr("ip", daddr)
 	if err != nil {
 		return nil, fmt.Errorf("resolve ip error")
@@ -190,40 +256,25 @@ func (c *K6GTPv2) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwPara
 // 	return options
 // }
 
-func (c *K6GTPv2) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
-	if _, err := c.SendEchoRequest(daddr); err != nil {
+func (c *K6GTPv2Client) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
+	seq, err := c.SendEchoRequest(daddr)
+	if err != nil {
 		return false, err
 	}
-	return c.CheckRecvEchoResponse()
+	return c.CheckRecvEchoResponse(seq)
 }
 
-func (c *K6GTPv2) CheckRecvEchoResponse() (bool, error) {
-	var err error
-	buf := make([]byte, 1500)
-
-	if err := c.Conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
-		return false, err
-	}
-	n, _, err := c.Conn.ReadFrom(buf)
+func (c *K6GTPv2Client) CheckRecvEchoResponse(seq uint32) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := GetMessage[*message.EchoResponse](ctx, c.sessions, message.MsgTypeEchoResponse, seq)
 	if err != nil {
 		return false, err
-	}
-	if err := c.Conn.SetReadDeadline(time.Time{}); err != nil {
-		return false, err
-	}
-
-	msg, err := message.Parse(buf[:n])
-	if err != nil {
-		return false, err
-	}
-
-	if _, ok := msg.(*message.EchoResponse); !ok {
-		return false, &gtpv2.UnexpectedTypeError{Msg: msg}
 	}
 	return true, nil
 }
 
-func (c *K6GTPv2) Close() error {
+func (c *K6GTPv2Client) Close() error {
 	err := c.Conn.Close()
 	if err != nil {
 		return err
