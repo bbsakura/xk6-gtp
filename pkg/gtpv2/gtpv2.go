@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,10 +65,9 @@ type ConnectionOptions struct {
 }
 
 type K6GTPv2Client struct {
-	vu        modules.VU
-	GenParams GenerateBaseParams
-	Conn      *gtpv2.Conn
-	sessions  *sync.Map
+	vu       modules.VU
+	Conn     *gtpv2.Conn
+	sessions *sync.Map
 }
 
 // NewClient is the JS constructor for the grpc Client.
@@ -112,34 +112,8 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 	}
 	setHandlers(conn, c.sessions)
 
-	// ie := map[uint8]gtp2c.InfomationElement{
-	// 	gtp2c.IMSIType:           gtp2c.NewIMSIIE(generateIMSI(imsiTail)),
-	// 	gtp2c.MSISDNType:         gtp2c.NewMSISDNIE([]uint8{8, 5, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1}),
-	// 	gtp2c.MEIType:            gtp2c.NewMEIIE([]uint8{9, 9, 9, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0}),
-	// 	gtp2c.ULIType:            gtp2c.NewULIIE(1, 1, &gtp2c.TAI{MCC: 123, MNC: 45, TAC: 12345}, &gtp2c.ECGI{MCC: 123, MNC: 45, ECI: 1234567890}),
-	// 	gtp2c.ServingNetworkType: gtp2c.NewServingNetworkIE(440, 20), //
-	// 	gtp2c.RATTypeType:        gtp2c.NewRATTypeIE(6),
-	// 	gtp2c.FTEIDType:          gtp2c.NewFTEIDIE(1, 1, gtp2c.S5S8PGWGTPC, cteid, net.IP{103, 95, 103, 107}),
-	// 	gtp2c.APNType:            gtp2c.NewAPNIE("bbsdev"),
-	// 	gtp2c.SelectionModeType:  gtp2c.NewSelectionModeIE(0),
-	// 	gtp2c.PDNTypeType:        gtp2c.NewPDNTypeIE(gtp2c.PDNTypeIPv4),
-	// 	gtp2c.PAAType:            gtp2c.NewPAAIE(gtp2c.PDNTypeIPv4, net.IP{0, 0, 0, 0}),
-	// 	gtp2c.APNRestrictionType: gtp2c.NewAPNRestrictionIE(0), // No Existing Contexts or Restriction
-	// 	gtp2c.AMBRType:           gtp2c.NewAMBRIE(1024, 1024),
-	// 	gtp2c.BearerContextType: gtp2c.NewBearerContextIE(map[uint8]gtp2c.InfomationElement{
-	// 		gtp2c.EBIType:       gtp2c.NewEBIIE(1),
-	// 		gtp2c.FTEIDType:     gtp2c.NewFTEIDIE(2, 1, gtp2c.S5S8PGWGTPU, uteid, net.IP{103, 95, 103, 107}),
-	// 		gtp2c.BearerQoSType: gtp2c.NewBearerQoSIE(0, 1, 0, 9, 0, 0, 0, 0),
-	// 	}),
-	// 	gtp2c.RecoveryType: gtp2c.NewRecoveryIE(0),
-	// }
 	c.Conn = conn
-	c.GenParams = GenerateBaseParams{
-		IMSI:   "454060000000000",
-		MSISDN: "852000111111",
-		MEI:    "9999000000000101",
-		ULI:    "9999000000000101",
-	}
+
 	return false, nil
 }
 
@@ -188,9 +162,9 @@ func (c *K6GTPv2Client) SendEchoRequest(daddr string) (uint32, error) {
 }
 
 func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*gtpv2.Session, uint32, error) {
-	d, err := net.ResolveIPAddr("ip", daddr)
+	d, err := net.ResolveIPAddr("udp", daddr)
 	if err != nil {
-		return nil, 0, fmt.Errorf("resolve ip error")
+		return nil, 0, fmt.Errorf("resolve udp error")
 	}
 	sess, seq, err := c.Conn.CreateSession(d, ie...)
 
@@ -198,41 +172,57 @@ func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*g
 }
 
 type S5S8SgwParams struct {
-	IMSI   string
-	MSISDN string
-	MEI    string
-	ULI    string
-	MCC    string
-	MNC    string
-	TAC    string
-	ECGI   string
-	RAT    string
-	FTEI   string
-	APN    string
-}
-
-type GenerateBaseParams struct {
-	IMSI   string
-	MSISDN string
-	MEI    string
-	ULI    string
-	MCC    string
-	MNC    string
-	TAC    string
-	ECGI   string
-	RAT    string
-	FTEI   string
-	APN    string
+	IMSI        string
+	MSISDN      string
+	MEI         string
+	ULI         string
+	MCC         string
+	MNC         string
+	TAC         uint16
+	ECGI        string
+	RAT         string
+	FTEI        string
+	APN         string
+	ECI         uint32
+	EPSBearerID uint8
+	UplaneTEID  uint32
+	AMBRUL      uint32
+	AMBRDL      uint32
 }
 
 func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, error) {
-	d, err := net.ResolveIPAddr("ip", daddr)
+	d, err := net.ResolveIPAddr("udp", daddr)
 	if err != nil {
-		return nil, fmt.Errorf("resolve ip error")
+		return nil, fmt.Errorf("resolve udp error")
 	}
 
+	localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
+
 	sess, _, err := c.Conn.CreateSession(d,
-		ie.NewIMSI("454060000000000"),
+		ie.NewIMSI(options.IMSI),
+		ie.NewMSISDN(options.MSISDN),
+		ie.NewMobileEquipmentIdentity(options.MEI),
+		ie.NewAccessPointName(options.APN),
+		ie.NewServingNetwork(options.MCC, options.MNC),
+		ie.NewRATType(gtpv2.RATTypeEUTRAN),
+		c.Conn.NewSenderFTEID(localIP, ""), // todo v6
+		ie.NewSelectionMode(gtpv2.SelectionModeMSorNetworkProvidedAPNSubscribedVerified),
+		ie.NewPDNType(gtpv2.PDNTypeIPv4),
+		ie.NewPDNAddressAllocation("0.0.0.0"),
+		ie.NewAPNRestriction(gtpv2.APNRestrictionPublic2),
+		ie.NewAggregateMaximumBitRate(options.AMBRUL, options.AMBRDL),
+		ie.NewUserLocationInformationStruct(
+			nil, nil, nil,
+			ie.NewTAI(options.MCC, options.MNC, options.TAC),
+			ie.NewECGI(options.MCC, options.MNC, options.ECI),
+			nil, nil, nil,
+		),
+		ie.NewBearerContext(
+			ie.NewEPSBearerID(options.EPSBearerID),
+			ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPU, options.UplaneTEID, localIP, "").WithInstance(1), //dummy uplane teid
+			ie.NewBearerQoS(1, 2, 1, 0xff, 0, 0, 0, 0),
+		),
+		ie.NewFullyQualifiedCSID(localIP, 1).WithInstance(1),
 	)
 
 	return sess, err
