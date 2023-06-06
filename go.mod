@@ -26,7 +26,6 @@ require (
 	github.com/containerd/console v1.0.3 // indirect
 	github.com/creack/pty v1.1.11 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
-	github.com/elisescu/pty v1.0.2 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4-0.20211119122758-180fcef48034+incompatible // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
