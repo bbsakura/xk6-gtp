@@ -2,6 +2,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -174,7 +176,9 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 	// PGW Cplane TEID
 	s5cFTEID := c.NewSenderFTEID(cIP, "").WithInstance(1)
 	// PGW Uplane TEID
-	s5uFTEID := uConn.NewFTEID(gtpv2.IFTypeS5S8PGWGTPU, uIP, "").WithInstance(2)
+	// s5uFTEID := uConn.NewFTEID(gtpv2.IFTypeS5S8PGWGTPU, uIP, "").WithInstance(2)
+	// uConnを作成する箇所がなく未使用のため、直接別関数でTEIDのみを生成
+	s5uFTEID := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPU, generateRandomUint32(), uIP, "")
 	// SGW Cplane TEID
 	s5sgwTEID, err := session.GetTEID(gtpv2.IFTypeS5S8SGWGTPC)
 	if err != nil {
@@ -278,4 +282,13 @@ func handleDeleteSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 	loggerCh <- fmt.Sprintf("Session deleted for Subscriber: %s", session.IMSI)
 	c.RemoveSession(session)
 	return nil
+}
+
+func generateRandomUint32() uint32 {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return 0
+	}
+
+	return binary.BigEndian.Uint32(b)
 }
