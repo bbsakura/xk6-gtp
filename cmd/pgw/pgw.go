@@ -9,7 +9,6 @@ import (
 	"net"
 	"strings"
 
-	"github.com/wmnsk/go-gtp/gtpv1"
 	"github.com/wmnsk/go-gtp/gtpv2"
 	"github.com/wmnsk/go-gtp/gtpv2/ie"
 	"github.com/wmnsk/go-gtp/gtpv2/message"
@@ -33,8 +32,6 @@ func getSubscriberIP(sub *gtpv2.Subscriber) (string, error) {
 var (
 	loggerCh = make(chan string)
 	errCh    = make(chan error)
-
-	uConn *gtpv1.UPlaneConn
 )
 
 func handleEchoRequest(c *gtpv2.Conn, senderAddr net.Addr, msg message.Message) error {
@@ -176,8 +173,6 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 	// PGW Cplane TEID
 	s5cFTEID := c.NewSenderFTEID(cIP, "").WithInstance(1)
 	// PGW Uplane TEID
-	// s5uFTEID := uConn.NewFTEID(gtpv2.IFTypeS5S8PGWGTPU, uIP, "").WithInstance(2)
-	// uConnを作成する箇所がなく未使用のため、直接別関数でTEIDのみを生成
 	s5uFTEID := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPU, generateRandomUint32(), uIP, "")
 	// SGW Cplane TEID
 	s5sgwTEID, err := session.GetTEID(gtpv2.IFTypeS5S8SGWGTPC)
@@ -216,29 +211,6 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 	if err := session.Activate(); err != nil {
 		return err
 	}
-
-	// go func() {
-	// 	buf := make([]byte, 1500)
-	// 	for {
-	// 		n, raddr, _, err := uConn.ReadFromGTP(buf)
-	// 		if err != nil {
-	// 			return
-	// 		}
-
-	// 		rsp := make([]byte, n)
-	// 		// update message type and checksum
-	// 		copy(rsp, buf[:n])
-	// 		rsp[20] = 0
-	// 		rsp[22] = 0x9b
-	// 		// swap IP
-	// 		copy(rsp[12:16], buf[16:20])
-	// 		copy(rsp[16:20], buf[12:16])
-
-	// 		if _, err := uConn.WriteToGTP(teidOut, rsp, raddr); err != nil {
-	// 			return
-	// 		}
-	// 	}
-	// }()
 
 	loggerCh <- fmt.Sprintf("Session created with S-GW for subscriber: %s;\n\tS5C S-GW: %s, TEID->: %#x, TEID<-: %#x",
 		session.Subscriber.IMSI, sgwAddr, s5sgwTEID, s5pgwTEID,

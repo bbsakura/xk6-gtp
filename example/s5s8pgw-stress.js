@@ -15,7 +15,7 @@ export default function (){
             IFTypeName: "IFTypeS5S8PGWGTPC"
         });
     }
-    const res = client.sendCreateSessionRequestS5S8(
+    const res = client.checkSendCreateSessionRequestS5S8(
         "127.0.0.1:2125",
          {
             imsi: "123451234567891",

@@ -133,6 +133,7 @@ func GetMessage[PT *T, T any](ctx context.Context, sessions *sync.Map, msgType u
 
 func setHandlers(conn *gtpv2.Conn, sessions *sync.Map) {
 	conn.AddHandler(message.MsgTypeEchoResponse, GetHandler(sessions, message.MsgTypeEchoResponse))
+	conn.AddHandler(message.MsgTypeCreateSessionResponse, GetHandler(sessions, message.MsgTypeCreateSessionResponse))
 }
 
 type sessionKey struct {
@@ -190,15 +191,15 @@ type S5S8SgwParams struct {
 	Ambrdl      uint32
 }
 
-func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, error) {
+func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, uint32, error) {
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
-		return nil, fmt.Errorf("resolve udp error")
+		return nil, 0, fmt.Errorf("resolve udp error")
 	}
 
 	localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
 
-	sess, _, err := c.Conn.CreateSession(d,
+	sess, seq, err := c.Conn.CreateSession(d,
 		ie.NewIMSI(options.Imsi),
 		ie.NewMSISDN(options.Msisdn),
 		ie.NewMobileEquipmentIdentity(options.Mei),
@@ -225,7 +226,7 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 		ie.NewFullyQualifiedCSID(localIP, 1).WithInstance(1),
 	)
 
-	return sess, err
+	return sess, seq, err
 }
 
 // func generateIMSI(n int) []uint8 {
@@ -258,6 +259,24 @@ func (c *K6GTPv2Client) CheckRecvEchoResponse(seq uint32) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, err := GetMessage[*message.EchoResponse](ctx, c.sessions, message.MsgTypeEchoResponse, seq)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *K6GTPv2Client) CheckSendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (bool, error) {
+	_, seq, err := c.SendCreateSessionRequestS5S8(daddr, options)
+	if err != nil {
+		return false, err
+	}
+	return c.CheckRecvCreateSessionResponse(seq)
+}
+
+func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := GetMessage[*message.CreateSessionResponse](ctx, c.sessions, message.MsgTypeCreateSessionResponse, seq)
 	if err != nil {
 		return false, err
 	}
