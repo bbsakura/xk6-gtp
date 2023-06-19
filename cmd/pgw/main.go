@@ -44,6 +44,7 @@ func main() {
 	s5cConn.AddHandlers(map[uint8]gtpv2.HandlerFunc{
 		message.MsgTypeCreateSessionRequest: handleCreateSessionRequest,
 		message.MsgTypeDeleteSessionRequest: handleDeleteSessionRequest,
+		message.MsgTypeModifyBearerRequest:  handleModifyBearerRequest,
 		message.MsgTypeEchoRequest:          handleEchoRequest,
 	})
 
