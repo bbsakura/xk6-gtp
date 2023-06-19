@@ -133,6 +133,7 @@ func GetMessage[PT *T, T any](ctx context.Context, sessions *sync.Map, msgType u
 
 func setHandlers(conn *gtpv2.Conn, sessions *sync.Map) {
 	conn.AddHandler(message.MsgTypeEchoResponse, GetHandler(sessions, message.MsgTypeEchoResponse))
+	conn.AddHandler(message.MsgTypeCreateSessionResponse, GetHandler(sessions, message.MsgTypeCreateSessionResponse))
 }
 
 type sessionKey struct {
@@ -172,60 +173,60 @@ func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*g
 }
 
 type S5S8SgwParams struct {
-	IMSI        string
-	MSISDN      string
-	MEI         string
-	ULI         string
-	MCC         string
-	MNC         string
-	TAC         uint16
-	ECGI        string
-	RAT         string
-	FTEI        string
-	APN         string
-	ECI         uint32
-	EPSBearerID uint8
-	UplaneTEID  uint32
-	AMBRUL      uint32
-	AMBRDL      uint32
+	Imsi   string
+	Msisdn string
+	Mei    string
+	// ULI         string
+	Mcc         string
+	Mnc         string
+	Tac         uint16
+	Ecgi        string
+	Rat         string
+	Ftei        string
+	Apn         string
+	Eci         uint32
+	Epsbearerid uint8
+	Uplaneteid  uint32
+	Ambrul      uint32
+	Ambrdl      uint32
 }
 
-func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, error) {
-	d, err := net.ResolveIPAddr("udp", daddr)
+func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, uint32, error) {
+	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
-		return nil, fmt.Errorf("resolve udp error")
+		return nil, 0, fmt.Errorf("resolve udp error")
 	}
 
 	localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
 
-	sess, _, err := c.Conn.CreateSession(d,
-		ie.NewIMSI(options.IMSI),
-		ie.NewMSISDN(options.MSISDN),
-		ie.NewMobileEquipmentIdentity(options.MEI),
-		ie.NewAccessPointName(options.APN),
-		ie.NewServingNetwork(options.MCC, options.MNC),
+	sess, seq, err := c.Conn.CreateSession(d,
+		ie.NewIMSI(options.Imsi),
+		ie.NewMSISDN(options.Msisdn),
+		ie.NewMobileEquipmentIdentity(options.Mei),
+		ie.NewAccessPointName(options.Apn),
+		ie.NewServingNetwork(options.Mcc, options.Mnc),
 		ie.NewRATType(gtpv2.RATTypeEUTRAN),
 		c.Conn.NewSenderFTEID(localIP, ""), // todo v6
 		ie.NewSelectionMode(gtpv2.SelectionModeMSorNetworkProvidedAPNSubscribedVerified),
 		ie.NewPDNType(gtpv2.PDNTypeIPv4),
 		ie.NewPDNAddressAllocation("0.0.0.0"),
 		ie.NewAPNRestriction(gtpv2.APNRestrictionPublic2),
-		ie.NewAggregateMaximumBitRate(options.AMBRUL, options.AMBRDL),
+		ie.NewAggregateMaximumBitRate(options.Ambrul, options.Ambrdl),
 		ie.NewUserLocationInformationStruct(
 			nil, nil, nil,
-			ie.NewTAI(options.MCC, options.MNC, options.TAC),
-			ie.NewECGI(options.MCC, options.MNC, options.ECI),
+			ie.NewTAI(options.Mcc, options.Mnc, options.Tac),
+			ie.NewECGI(options.Mcc, options.Mnc, options.Eci),
 			nil, nil, nil,
 		),
 		ie.NewBearerContext(
-			ie.NewEPSBearerID(options.EPSBearerID),
-			ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPU, options.UplaneTEID, localIP, "").WithInstance(1), //dummy uplane teid
+			ie.NewEPSBearerID(options.Epsbearerid),
+			ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPU, options.Uplaneteid, localIP, "").WithInstance(1), //dummy uplane teid
 			ie.NewBearerQoS(1, 2, 1, 0xff, 0, 0, 0, 0),
 		),
 		ie.NewFullyQualifiedCSID(localIP, 1).WithInstance(1),
 	)
 
-	return sess, err
+	return sess, seq, err
 }
 
 // func generateIMSI(n int) []uint8 {
@@ -258,6 +259,24 @@ func (c *K6GTPv2Client) CheckRecvEchoResponse(seq uint32) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, err := GetMessage[*message.EchoResponse](ctx, c.sessions, message.MsgTypeEchoResponse, seq)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *K6GTPv2Client) CheckSendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (bool, error) {
+	_, seq, err := c.SendCreateSessionRequestS5S8(daddr, options)
+	if err != nil {
+		return false, err
+	}
+	return c.CheckRecvCreateSessionResponse(seq)
+}
+
+func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := GetMessage[*message.CreateSessionResponse](ctx, c.sessions, message.MsgTypeCreateSessionResponse, seq)
 	if err != nil {
 		return false, err
 	}
