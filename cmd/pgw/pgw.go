@@ -171,7 +171,12 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 	uIP := strings.Split(*s5u, ":")[0]
 
 	// PGW Cplane TEID
-	s5cFTEID := c.NewSenderFTEID(cIP, "").WithInstance(1)
+	var s5cFTEID *ie.IE
+	if session.Subscriber.IMEI == "123451234567895" { // testing only
+		s5cFTEID = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPC, 111, uIP, "")
+	} else {
+		s5cFTEID = c.NewSenderFTEID(cIP, "").WithInstance(1)
+	}
 	// PGW Uplane TEID
 	s5uFTEID := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPU, generateRandomUint32(), uIP, "")
 	// SGW Cplane TEID

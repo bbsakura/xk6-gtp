@@ -15,36 +15,29 @@ export default function (){
             if_type_name: "IFTypeS5S8SGWGTPC"
         });
     }
-    const csr_res = client.checkSendCreateSessionRequestS5S8(
-        "127.0.0.1:2123",
-         {
-            imsi: "123451234567891",
-            msisdn: "123451234567891",
-            mei: "123451234567891",
-            mcc: "123",
-            mnc: "123",
-            tac: 1,
-            rat: "EUTRAN",
-            apn: "apn",
-            eci: 1,
-            epsbearerid: 1,
-            uplaneteid: 1,
-            // cplaneteid: 10, // sgw-c teid (optional)
-            ambrul: 100000000,
-            ambrdl: 100000000,
-        }
-    )
+    const options = {
+        imsi: "123451234567895", // For this imsi, pgw is defined by mock so that teid:111 for test
+        msisdn: "123451234567895",
+        mei: "123451234567895",
+        mcc: "123",
+        mnc: "123",
+        tac: 1,
+        rat: "EUTRAN",
+        apn: "apn",
+        eci: 1,
+        epsbearerid: 1,
+        uplaneteid: 1,
+        cplanesgwteid: 10,
+        cplanepgwteid: 111,
+        ambrul: 100000000,
+        ambrdl: 100000000,
+    }
+    const csr_res = client.checkSendCreateSessionRequestS5S8("127.0.0.1:2123", options)
     check (csr_res, {
         'csr is success': (res) => true === res,
     });
 
-    const dsr_res = client.checkSendDeleteSessionRequestS5S8(
-        {
-            // cplaneteid: 10, // pgw-c teid (optional)
-            imsi: "123451234567891",
-            epsbearerid: 1,
-        }
-    )
+    const dsr_res = client.checkSendDeleteSessionRequestS5S8("127.0.0.1:2123",options)
     check (dsr_res, {
         'dsr is success': (res) => true === res,
     });
