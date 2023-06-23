@@ -53,7 +53,7 @@ func main() {
 			log.Printf("%s", str)
 		case err := <-errCh:
 			log.Printf("Warning: %s", err)
-		case <-time.After(10 * time.Second):
+		case <-time.After(100 * time.Second):
 			var activeIMSIs []string
 			for _, sess := range s5cConn.Sessions() {
 				if !sess.IsActive() {
