@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -58,10 +57,10 @@ func (mi *ModuleInstance) Exports() modules.Exports {
 }
 
 type ConnectionOptions struct {
-	Saddr      string
-	Daddr      string
-	Count      int
-	IFTypeName string
+	Saddr      string `json:"saddr"`
+	Daddr      string `json:"daddr"`
+	Count      int    `json:"count"`
+	IfTypeName string `json:"if_type_name"`
 }
 
 type K6GTPv2Client struct {
@@ -93,10 +92,10 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 	}
 
 	iftype := IFTypeS11MMEGTPC
-	if options.IFTypeName != "" {
-		iftype, err = EnumIFTypeString(options.IFTypeName)
+	if options.IfTypeName != "" {
+		iftype, err = EnumIFTypeString(options.IfTypeName)
 		if err != nil {
-			return false, errors.WithMessage(err, "invalid IFTypeName")
+			return false, errors.WithMessage(err, "invalid IfTypeName")
 		}
 	}
 
@@ -134,6 +133,7 @@ func GetMessage[PT *T, T any](ctx context.Context, sessions *sync.Map, msgType u
 func setHandlers(conn *gtpv2.Conn, sessions *sync.Map) {
 	conn.AddHandler(message.MsgTypeEchoResponse, GetHandler(sessions, message.MsgTypeEchoResponse))
 	conn.AddHandler(message.MsgTypeCreateSessionResponse, GetHandler(sessions, message.MsgTypeCreateSessionResponse))
+	conn.AddHandler(message.MsgTypeDeleteSessionResponse, GetHandler(sessions, message.MsgTypeDeleteSessionResponse))
 }
 
 type sessionKey struct {
@@ -172,63 +172,6 @@ func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*g
 	return sess, seq, err
 }
 
-type S5S8SgwParams struct {
-	Imsi   string
-	Msisdn string
-	Mei    string
-	// ULI         string
-	Mcc         string
-	Mnc         string
-	Tac         uint16
-	Ecgi        string
-	Rat         string
-	Ftei        string
-	Apn         string
-	Eci         uint32
-	Epsbearerid uint8
-	Uplaneteid  uint32
-	Ambrul      uint32
-	Ambrdl      uint32
-}
-
-func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, uint32, error) {
-	d, err := net.ResolveUDPAddr("udp", daddr)
-	if err != nil {
-		return nil, 0, fmt.Errorf("resolve udp error")
-	}
-
-	localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
-
-	sess, seq, err := c.Conn.CreateSession(d,
-		ie.NewIMSI(options.Imsi),
-		ie.NewMSISDN(options.Msisdn),
-		ie.NewMobileEquipmentIdentity(options.Mei),
-		ie.NewAccessPointName(options.Apn),
-		ie.NewServingNetwork(options.Mcc, options.Mnc),
-		ie.NewRATType(gtpv2.RATTypeEUTRAN),
-		c.Conn.NewSenderFTEID(localIP, ""), // todo v6
-		ie.NewSelectionMode(gtpv2.SelectionModeMSorNetworkProvidedAPNSubscribedVerified),
-		ie.NewPDNType(gtpv2.PDNTypeIPv4),
-		ie.NewPDNAddressAllocation("0.0.0.0"),
-		ie.NewAPNRestriction(gtpv2.APNRestrictionPublic2),
-		ie.NewAggregateMaximumBitRate(options.Ambrul, options.Ambrdl),
-		ie.NewUserLocationInformationStruct(
-			nil, nil, nil,
-			ie.NewTAI(options.Mcc, options.Mnc, options.Tac),
-			ie.NewECGI(options.Mcc, options.Mnc, options.Eci),
-			nil, nil, nil,
-		),
-		ie.NewBearerContext(
-			ie.NewEPSBearerID(options.Epsbearerid),
-			ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPU, options.Uplaneteid, localIP, "").WithInstance(1), //dummy uplane teid
-			ie.NewBearerQoS(1, 2, 1, 0xff, 0, 0, 0, 0),
-		),
-		ie.NewFullyQualifiedCSID(localIP, 1).WithInstance(1),
-	)
-
-	return sess, seq, err
-}
-
 // func generateIMSI(n int) []uint8 {
 // 	imsi := []uint8{4, 5, 4, 0, 6, 0, 0, 0, 0, 0,
 // 		uint8((n / 10000) % 10),
@@ -237,14 +180,6 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 // 		uint8((n / 10) % 10),
 // 		uint8(n % 10)}
 // 	return imsi
-// }
-
-// func (c *K6GTPv2) generateS5S8SgwParams(options S5S8SgwParams) S5S8SgwParams {
-// 	// if options.IMSI != "" {
-// 	// 	options.
-// 	// }
-// 	// todo
-// 	return options
 // }
 
 func (c *K6GTPv2Client) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
@@ -265,18 +200,36 @@ func (c *K6GTPv2Client) CheckRecvEchoResponse(seq uint32) (bool, error) {
 	return true, nil
 }
 
-func (c *K6GTPv2Client) CheckSendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (bool, error) {
-	_, seq, err := c.SendCreateSessionRequestS5S8(daddr, options)
+func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32, imsi string) (bool, error) {
+	sess, err := c.Conn.GetSessionByIMSI(imsi)
 	if err != nil {
 		return false, err
 	}
-	return c.CheckRecvCreateSessionResponse(seq)
-}
 
-func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_, err := GetMessage[*message.CreateSessionResponse](ctx, c.sessions, message.MsgTypeCreateSessionResponse, seq)
+	res, err := GetMessage[*message.CreateSessionResponse](ctx, c.sessions, message.MsgTypeCreateSessionResponse, seq)
+	if err != nil {
+		return false, err
+	}
+	if fteidcIE := res.PGWS5S8FTEIDC; fteidcIE != nil {
+		it, err := fteidcIE.InterfaceType()
+		if err != nil {
+			return true, nil
+		}
+		teid, err := fteidcIE.TEID()
+		if err != nil {
+			return true, nil
+		}
+		sess.AddTEID(it, teid)
+	}
+	return true, nil
+}
+
+func (c *K6GTPv2Client) CheckRecvDeleteSessionResponse(seq uint32) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := GetMessage[*message.DeleteSessionResponse](ctx, c.sessions, message.MsgTypeDeleteSessionResponse, seq)
 	if err != nil {
 		return false, err
 	}
