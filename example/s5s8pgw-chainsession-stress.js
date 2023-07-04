@@ -10,13 +10,13 @@ export default function (){
         client = new gtpv2.K6GTPv2Client();
         client.connect({
             saddr: `127.0.0.${exec.vu.idInTest}:2124`,
-            daddr: "127.0.0.1:2125",
+            daddr: "127.0.0.1:2123",
             count: 0,
-            IFTypeName: "IFTypeS5S8PGWGTPC"
+            if_type_name: "IFTypeS5S8SGWGTPC"
         });
     }
-    const res = client.checkSendCreateSessionRequestS5S8(
-        "127.0.0.1:2125",
+    const csr_res = client.checkSendCreateSessionRequestS5S8(
+        "127.0.0.1:2123",
          {
             imsi: "123451234567891",
             msisdn: "123451234567891",
@@ -33,8 +33,19 @@ export default function (){
             ambrdl: 100000000,
         }
     )
-    check (res, {
-        'success': (res) => true === res,
+    check (csr_res, {
+        'csr is success': (res) => true === res,
+    });
+
+    const dsr_res = client.checkSendDeleteSessionRequestS5S8(
+        "",
+        {
+            imsi: "123451234567891",
+            epsbearerid: 1,
+        }
+    )
+    check (dsr_res, {
+        'dsr is success': (res) => true === res,
     });
     client.close()
 }

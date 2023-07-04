@@ -1,5 +1,6 @@
 # xk6-gtp
 Client extension for interacting with a use GTP proto of your k6 test.
+
 🚧 This project WIP... 🚧
 
 ## Prepair
@@ -28,12 +29,15 @@ make build
 ### GTPv2-C
 - [x] Node monitoring (Echo Request/Echo Response)
 - [x] Create Session  (Create Session Request/Create Session Response)
-- [ ] Delete Session (Delete Session Request/Delete Session Response)
+  - [x] sgw->pgw scenario
+- [x] Delete Session (Delete Session Request/Delete Session Response)
+  - [x] sgw->pgw scenario
 - [ ] Modify Bearer (Modify Bearer Request/Modify Bearer Response)
+  - [ ] sgw->pgw scenario
 - [ ] Delete Bearer (Delete Bearer Request/Delete Bearer Response)
 
 
-##　Special thanks
+## Special thanks
 This PoC takes full advantage of [go-gtp](https://github.com/wmnsk/go-gtp). Thanks to the @wmnsk and developer all.
 
 ## Developers Settings
