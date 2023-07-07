@@ -11,6 +11,47 @@ jobs:
         with:
           go-version: ^1.20
       - uses: actions/checkout@v3
+      - name: setup asdf
+        uses: asdf-vm/actions/setup@3dcedf44f74a5d84ca0aacf1e1b0c18649db6f01
+      - name: set env ASDF_PYTHON_DEFAULT_PACKAGES_FILE
+        run: |
+          export ASDF_PYTHON_DEFAULT_PACKAGES_FILE=$(pwd)
+          echo "legacy_version_file = yes" > ~/.asdfrc
+      - name: asdf cache
+        id: asdf_cache_id
+        uses: actions/cache@v3
+        with:
+          path: ~/.asdf
+          key: ${{ runner.os }}-asdf-${{ hashFiles('.tool-versions') }}
+          restore-keys: |
+            ${{ runner.os }}-asdf-
+      - name: asdf install
+        if: steps.asdf_cache_id.outputs.cache-hit != 'true'
+        uses: asdf-vm/actions/install@3dcedf44f74a5d84ca0aacf1e1b0c18649db6f01
+      - name: pre-commit install
+        run: pre-commit install
+      - name: asdf go cache
+        id: asdf_go_cache_id
+        uses: actions/cache@v3
+        with:
+          path: ~/.asdf/installs/golang
+          key: ${{ runner.os }}-asdf-${{ hashFiles('.tool-versions') }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-asdf-go-
+      - name: go mod tidy and install
+        if: steps.asdf_go_cache_id.outputs.cache-hit != 'true'
+        run: |
+          go mod tidy
+          make install-go-tools
+      - name: go mod cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
