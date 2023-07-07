@@ -40,6 +40,7 @@ xk6build: ## Package the project
 ## Test:
 test: ## Run the tests of the project
 	$(GOTEST) -v -race ./... $(OUTPUT_OPTIONS)
+	./scripts/run-example.sh
 
 ## Lint:
 stylecheck: ## Use precommit, fmt and lint for this project.
