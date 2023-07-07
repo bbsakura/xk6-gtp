@@ -4,7 +4,7 @@
 
 # startup pgw for tests
 pkill pgw
-./out/bin/pgw 2>/dev/null > /dev/null &
+./out/bin/pgw >/dev/null 2>&1 &
 
 function cleanup() {
     echo [INFO] pkill pgw
