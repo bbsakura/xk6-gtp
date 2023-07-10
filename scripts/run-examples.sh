@@ -20,9 +20,11 @@ function run_xk6gtp() {
 # execute test scenarios
 for jsfile in example/*.js; do
     echo "run $jsfile"
-    res=$(run_xk6gtp $jsfile |grep 'checks'|awk '{print $2}')
+    full_res=$(run_xk6gtp $jsfile)
+    res=$(echo "$full_res" |grep 'checks'|awk '{print $2}')
     echo "result: $res"
     if [ "$res" != "100.00%" ]; then
+        echo "$full_res"
         failed=1
     fi
 done
