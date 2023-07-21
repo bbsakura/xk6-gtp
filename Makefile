@@ -40,6 +40,7 @@ xk6build: ## Package the project
 ## Test:
 test: ## Run the tests of the project
 	$(GOTEST) -v -race ./... $(OUTPUT_OPTIONS)
+	./scripts/run-examples.sh
 
 ## Lint:
 stylecheck: ## Use precommit, fmt and lint for this project.
@@ -62,6 +63,7 @@ docker-release: ## Release the container with tag latest and version
 ## Golang:
 install-go-tools: ## install project go tools
 	cat tools.go | awk -F'"' '/_/ {print $$2s}' | xargs -tI {} go install {}
+	asdf reshim golang
 
 go-gen: ## go:generate invocations
 	go generate ./...
