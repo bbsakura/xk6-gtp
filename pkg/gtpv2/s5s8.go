@@ -7,6 +7,7 @@ import (
 
 	"github.com/wmnsk/go-gtp/gtpv2"
 	"github.com/wmnsk/go-gtp/gtpv2/ie"
+	"github.com/wmnsk/go-gtp/gtpv2/message"
 )
 
 type S5S8SgwParams struct {
@@ -53,7 +54,7 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 	)
 	sess.AddTEID(uteidIE.MustInterfaceType(), uteidIE.MustTEID())
 	c.Conn.RegisterSession(cteidIE.MustTEID(), sess)
-
+	sess.GetTEID(gtpv2.IFTypeS5S8PGWGTPC)
 	return sess, seq, err
 }
 
@@ -100,6 +101,61 @@ func (c *K6GTPv2Client) SendDeleteSessionRequestS5S8(daddr string, options S5S8S
 	return seq, err
 }
 
+func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8SgwParams) (uint32, error) {
+	d, err := net.ResolveUDPAddr("udp", daddr)
+	if err != nil {
+		return 0, fmt.Errorf("resolve udp error")
+	}
+
+	// localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
+	// cteidIE = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, options.Cplanesgwteid, localIP, "")
+	// uteidIE = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.Uplaneteid, localIP, "").WithInstance(2)
+
+	s5Session, err := c.Conn.GetSessionByIMSI(options.Imsi)
+	if err != nil {
+		return 0, err
+	}
+	// Cplanepgwteid := 111
+	Cplanepgwteid, err := s5Session.GetTEID(gtpv2.IFTypeS5S8PGWGTPC)
+	if err != nil {
+		// fmt.Printf("%v\n", s5Session)
+		return 0, err
+	}
+	Cplanesgwteid, err := s5Session.GetTEID(gtpv2.IFTypeS5S8SGWGTPC)
+	if err != nil {
+		return 0, err
+	}
+
+	msg := message.NewModifyBearerRequest(
+		Cplanepgwteid, 0,
+		ie.NewUserLocationInformationStruct(
+			nil, nil, nil,
+			ie.NewTAI(options.Mcc, options.Mnc, options.Tac),
+			ie.NewECGI(options.Mcc, options.Mnc, options.Eci),
+			nil, nil, nil,
+		),
+		ie.NewServingNetwork(options.Mcc, options.Mnc),
+		ie.NewRATType(gtpv2.RATTypeEUTRAN),
+
+		// Temporarily set SGW C-Plane IP address
+		ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, Cplanesgwteid, "1.1.1.5", ""),
+		ie.NewAggregateMaximumBitRate(options.Ambrul, options.Ambrdl),
+		ie.NewMobileEquipmentIdentity(options.Mei),
+		ie.NewUETimeZone(9, 0),
+
+		ie.NewBearerContext(
+			ie.NewEPSBearerID(0x05),
+			ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.Uplaneteid, "1.1.1.4", "").WithInstance(1),
+		),
+		ie.NewRecovery(0),
+	)
+
+	seq, err := c.Conn.SendMessageTo(msg, d)
+	if err != nil {
+		return 0, err
+	}
+	return seq, nil
+}
 func (c *K6GTPv2Client) genS5S8SessionIE(options S5S8SgwParams, cteidIE, uteidIE *ie.IE, localIP string) []*ie.IE {
 	ielist := []*ie.IE{
 		ie.NewIMSI(options.Imsi),
@@ -145,4 +201,12 @@ func (c *K6GTPv2Client) CheckSendDeleteSessionRequestS5S8(daddr string, options 
 		return false, err
 	}
 	return c.CheckRecvDeleteSessionResponse(seq)
+}
+
+func (c *K6GTPv2Client) CheckSendModifyBearerRequestS5S8(daddr string, options S5S8SgwParams) (bool, error) {
+	seq, err := c.SendModifyBearerRequestS5S8(daddr, options)
+	if err != nil {
+		return false, err
+	}
+	return c.CheckRecvModifyBearerResponse(seq)
 }

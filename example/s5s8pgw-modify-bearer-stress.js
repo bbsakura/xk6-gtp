@@ -35,7 +35,7 @@ export default function (){
         'csr is success': (res) => true === res,
     });
 
-    const mbr_res = client.sendModifyBearerRequestS5S8("127.0.0.1:2123", options)
+    const mbr_res = client.checkSendModifyBearerRequestS5S8("127.0.0.1:2123", options)
     check (mbr_res, {
         'mbr is success': (res) => true === res,
     });

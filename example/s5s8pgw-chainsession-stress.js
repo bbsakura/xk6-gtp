@@ -37,6 +37,7 @@ export default function (){
         'csr is success': (res) => true === res,
     });
 
+    // if not exist dst
     const dsr_res = client.checkSendDeleteSessionRequestS5S8(
         "",
         {
