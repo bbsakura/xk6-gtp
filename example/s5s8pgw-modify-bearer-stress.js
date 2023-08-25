@@ -26,7 +26,9 @@ export default function (){
         apn: "apn",
         eci: 1,
         epsbearerid: 1,
-        uplaneteid: 1,
+        uplane_ie:{
+            teid: 1,
+        },
         ambrul: 100000000,
         ambrdl: 100000000,
     }
@@ -35,7 +37,7 @@ export default function (){
         'csr is success': (res) => true === res,
     });
 
-    const mbr_res = client.checkSendModifyBearerRequestS5S8("127.0.0.1:2123", options)
+    const mbr_res = client.checkSendModifyBearerRequestS5S8("", options)
     check (mbr_res, {
         'mbr is success': (res) => true === res,
     });

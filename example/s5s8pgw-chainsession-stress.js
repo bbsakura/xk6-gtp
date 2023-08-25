@@ -28,7 +28,9 @@ export default function (){
             apn: "apn",
             eci: 1,
             epsbearerid: 1,
-            uplaneteid: 1,
+            uplane_ie: {
+                teid: 1,
+            },
             ambrul: 100000000,
             ambrdl: 100000000,
         }
@@ -37,12 +39,40 @@ export default function (){
         'csr is success': (res) => true === res,
     });
 
+    const mbr_res = client.checkSendModifyBearerRequestS5S8(
+        "",
+        {
+        imsi: "123451234567891",
+        msisdn: "123451234567891",
+        mei: "123451234567891",
+        mcc: "123",
+        mnc: "123",
+        tac: 1,
+        rat: "EUTRAN",
+        apn: "apn",
+        eci: 1,
+        epsbearerid: 100,
+        uplane_ie: {
+            ip: "1.1.1.5",
+            ip6: "fc00::5",
+        },
+        cplane_sgw_ie:{
+            ip:  "1.1.1.4",
+            ip6: "fc00::4",
+        },
+        ambrul: 200000000,
+        ambrdl: 200000000,
+    })
+    check (mbr_res, {
+        'mbr is success': (res) => true === res,
+    });
+
     // if not exist dst
     const dsr_res = client.checkSendDeleteSessionRequestS5S8(
         "",
         {
             imsi: "123451234567891",
-            epsbearerid: 1,
+            epsbearerid: 100,
         }
     )
     check (dsr_res, {

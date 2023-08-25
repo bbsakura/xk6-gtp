@@ -27,14 +27,23 @@ export default function (){
         eci: 1,
         epsbearerid: 1,
         uplaneteid: 1,
-        cplanesgwteid: 10,
-        cplanepgwteid: 111,
+        cplane_sgw_ie:{
+            teid: 10,
+        },
+        cplane_pgw_id: {
+            teid: 111,
+        },
         ambrul: 100000000,
         ambrdl: 100000000,
     }
     const csr_res = client.checkSendCreateSessionRequestS5S8("127.0.0.1:2123", options)
     check (csr_res, {
         'csr is success': (res) => true === res,
+    });
+
+    const mbr_res = client.checkSendModifyBearerRequestS5S8("127.0.0.1:2123", options)
+    check (mbr_res, {
+        'mbr is success': (res) => true === res,
     });
 
     const dsr_res = client.checkSendDeleteSessionRequestS5S8("127.0.0.1:2123",options)
