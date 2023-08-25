@@ -26,7 +26,9 @@ export default function (){
         apn: "apn",
         eci: 1,
         epsbearerid: 1,
-        uplaneteid: 1,
+        uplane_ie: {
+            teid: 1
+        },
         cplane_sgw_ie:{
             teid: 10,
         },
