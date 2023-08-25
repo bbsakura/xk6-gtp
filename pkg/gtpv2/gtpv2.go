@@ -45,6 +45,7 @@ func (*RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 	}
 
 	mi.exports["K6GTPv2Client"] = mi.NewK6GTPv2Client
+	mi.exports["GenerateDummyIMSI"] = GenerateDummyIMSI
 	return mi
 }
 
@@ -172,16 +173,6 @@ func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*g
 
 	return sess, seq, err
 }
-
-// func generateIMSI(n int) []uint8 {
-// 	imsi := []uint8{4, 5, 4, 0, 6, 0, 0, 0, 0, 0,
-// 		uint8((n / 10000) % 10),
-// 		uint8((n / 1000) % 10),
-// 		uint8((n / 100) % 10),
-// 		uint8((n / 10) % 10),
-// 		uint8(n % 10)}
-// 	return imsi
-// }
 
 func (c *K6GTPv2Client) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
 	seq, err := c.SendEchoRequest(daddr)
