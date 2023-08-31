@@ -50,13 +50,13 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 	} else {
 		cteidIE = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, options.CplaneSgwIE.Teid, localIP, "")
 	}
-	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) //dummy uplane teid
+	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
+
 	sess, seq, err := c.Conn.CreateSession(d,
 		c.genS5S8SessionIE(options, cteidIE, uteidIE, localIP)...,
 	)
 	sess.AddTEID(uteidIE.MustInterfaceType(), uteidIE.MustTEID())
 	c.Conn.RegisterSession(cteidIE.MustTEID(), sess)
-	sess.GetTEID(gtpv2.IFTypeS5S8PGWGTPC)
 	return sess, seq, err
 }
 
@@ -102,12 +102,12 @@ func (c *K6GTPv2Client) registerDummyS5S8Session(daddr string, options S5S8SgwPa
 	}
 	localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
 	cteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, options.CplaneSgwIE.Teid, localIP, "")
-	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) //dummy uplane teid
-
+	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
 	s5Session, err := c.Conn.ParseCreateSession(d, c.genS5S8SessionIE(options, cteidIE, uteidIE, localIP)...)
 	if err != nil {
 		return nil, err
 	}
+
 	s5Session.AddTEID(uteidIE.MustInterfaceType(), uteidIE.MustTEID())
 	c.Conn.RegisterSession(cteidIE.MustTEID(), s5Session)
 	return s5Session, nil

@@ -154,7 +154,7 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 				if err != nil {
 					return err
 				}
-				//IFTypeS5S8SGWGTPU?
+
 				session.AddTEID(it, teidOut)
 			}
 		}
@@ -288,7 +288,7 @@ func handleModifyBearerRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mess
 		ie.NewMSISDN("819010001000"),
 		ie.NewBearerContext(
 			ie.NewCause(gtpv2.CauseRequestAccepted, 0, 0, 0, nil),
-			ie.NewEPSBearerID(5), //TODO : Session確立時のBearer Contextを参照する必要があるが、ここでは固定値を入れている
+
 			ie.NewChargingID(0),
 		),
 		ie.NewRecovery(0),
