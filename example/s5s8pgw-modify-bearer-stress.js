@@ -26,14 +26,8 @@ export default function (){
         apn: "apn",
         eci: 1,
         epsbearerid: 1,
-        uplane_ie: {
-            teid: 1
-        },
-        cplane_sgw_ie:{
-            teid: 10,
-        },
-        cplane_pgw_id: {
-            teid: 111,
+        uplane_ie:{
+            teid: 1,
         },
         ambrul: 100000000,
         ambrdl: 100000000,
@@ -43,14 +37,10 @@ export default function (){
         'csr is success': (res) => true === res,
     });
 
-    const mbr_res = client.checkSendModifyBearerRequestS5S8("127.0.0.1:2123", options)
+    const mbr_res = client.checkSendModifyBearerRequestS5S8("", options)
     check (mbr_res, {
         'mbr is success': (res) => true === res,
     });
 
-    const dsr_res = client.checkSendDeleteSessionRequestS5S8("127.0.0.1:2123",options)
-    check (dsr_res, {
-        'dsr is success': (res) => true === res,
-    });
     client.close()
 }

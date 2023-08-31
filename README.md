@@ -32,8 +32,8 @@ make build
   - [x] sgw->pgw scenario
 - [x] Delete Session (Delete Session Request/Delete Session Response)
   - [x] sgw->pgw scenario
-- [ ] Modify Bearer (Modify Bearer Request/Modify Bearer Response)
-  - [ ] sgw->pgw scenario
+- [x] Modify Bearer (Modify Bearer Request/Modify Bearer Response)
+  - [x] sgw->pgw scenario
 - [ ] Delete Bearer (Delete Bearer Request/Delete Bearer Response)
 
 

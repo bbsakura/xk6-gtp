@@ -154,7 +154,7 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 				if err != nil {
 					return err
 				}
-				//IFTypeS5S8SGWGTPU?
+
 				session.AddTEID(it, teidOut)
 			}
 		}
@@ -173,7 +173,7 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 	// PGW Cplane TEID
 	var s5cFTEID *ie.IE
 	if session.Subscriber.IMEI == "123451234567895" { // testing only
-		s5cFTEID = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPC, 111, uIP, "")
+		s5cFTEID = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPC, 111, uIP, "").WithInstance(1)
 	} else {
 		s5cFTEID = c.NewSenderFTEID(cIP, "").WithInstance(1)
 	}
@@ -258,6 +258,46 @@ func handleDeleteSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 
 	loggerCh <- fmt.Sprintf("Session deleted for Subscriber: %s", session.IMSI)
 	c.RemoveSession(session)
+	return nil
+}
+
+// Modify Request/Response in TAU with S-GW relocation
+func handleModifyBearerRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Message) error {
+	// SGW TEID cplane
+	reqFromSGW := msg.(*message.ModifyBearerRequest)
+	s5sgwTEID := uint32(0)
+	if fteidcIE := reqFromSGW.SenderFTEIDC; fteidcIE != nil {
+		teid, err := fteidcIE.TEID()
+		if err != nil {
+			return err
+		}
+		s5sgwTEID = teid
+	} else {
+		return &gtpv2.RequiredIEMissingError{Type: ie.FullyQualifiedTEID}
+	}
+
+	seqn := reqFromSGW.Header.SequenceNumber
+
+	// cause: context not found
+	// TODO...
+
+	// cause: RequestAccepted
+	rspFromPGW := message.NewModifyBearerResponse(
+		s5sgwTEID, seqn,
+		ie.NewCause(gtpv2.CauseRequestAccepted, 0, 0, 0, nil),
+		ie.NewMSISDN("819010001000"),
+		ie.NewBearerContext(
+			ie.NewCause(gtpv2.CauseRequestAccepted, 0, 0, 0, nil),
+
+			ie.NewChargingID(0),
+		),
+		ie.NewRecovery(0),
+		ie.NewAPNRestriction(gtpv2.APNRestrictionPublic2),
+	)
+	if err := c.RespondTo(sgwAddr, reqFromSGW, rspFromPGW); err != nil {
+		return err
+	}
+
 	return nil
 }
 

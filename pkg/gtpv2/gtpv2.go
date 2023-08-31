@@ -45,6 +45,7 @@ func (*RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 	}
 
 	mi.exports["K6GTPv2Client"] = mi.NewK6GTPv2Client
+	mi.exports["GenerateDummyIMSI"] = GenerateDummyIMSI
 	return mi
 }
 
@@ -134,6 +135,7 @@ func setHandlers(conn *gtpv2.Conn, sessions *sync.Map) {
 	conn.AddHandler(message.MsgTypeEchoResponse, GetHandler(sessions, message.MsgTypeEchoResponse))
 	conn.AddHandler(message.MsgTypeCreateSessionResponse, GetHandler(sessions, message.MsgTypeCreateSessionResponse))
 	conn.AddHandler(message.MsgTypeDeleteSessionResponse, GetHandler(sessions, message.MsgTypeDeleteSessionResponse))
+	conn.AddHandler(message.MsgTypeModifyBearerResponse, GetHandler(sessions, message.MsgTypeModifyBearerResponse))
 }
 
 type sessionKey struct {
@@ -172,16 +174,6 @@ func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*g
 	return sess, seq, err
 }
 
-// func generateIMSI(n int) []uint8 {
-// 	imsi := []uint8{4, 5, 4, 0, 6, 0, 0, 0, 0, 0,
-// 		uint8((n / 10000) % 10),
-// 		uint8((n / 1000) % 10),
-// 		uint8((n / 100) % 10),
-// 		uint8((n / 10) % 10),
-// 		uint8(n % 10)}
-// 	return imsi
-// }
-
 func (c *K6GTPv2Client) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
 	seq, err := c.SendEchoRequest(daddr)
 	if err != nil {
@@ -212,12 +204,15 @@ func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32, imsi string) 
 	if err != nil {
 		return false, err
 	}
+	fmt.Println(res)
 	if fteidcIE := res.PGWS5S8FTEIDC; fteidcIE != nil {
 		it, err := fteidcIE.InterfaceType()
+		fmt.Println(it)
 		if err != nil {
 			return true, nil
 		}
 		teid, err := fteidcIE.TEID()
+		fmt.Println(teid)
 		if err != nil {
 			return true, nil
 		}
@@ -230,6 +225,16 @@ func (c *K6GTPv2Client) CheckRecvDeleteSessionResponse(seq uint32) (bool, error)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, err := GetMessage[*message.DeleteSessionResponse](ctx, c.sessions, message.MsgTypeDeleteSessionResponse, seq)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *K6GTPv2Client) CheckRecvModifyBearerResponse(seq uint32) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := GetMessage[*message.ModifyBearerResponse](ctx, c.sessions, message.MsgTypeModifyBearerResponse, seq)
 	if err != nil {
 		return false, err
 	}
