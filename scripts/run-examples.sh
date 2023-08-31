@@ -14,7 +14,7 @@ trap cleanup EXIT
 
 function run_xk6gtp() {
     local jsfile=$1
-    ./out/bin/xk6gtp run $jsfile 2> /dev/null
+    ./out/bin/xk6 run $jsfile 2> /dev/null
 }
 
 # execute test scenarios

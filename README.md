@@ -20,7 +20,7 @@ make build
 
 ## Test Running
 ```shell
-./out/bin/xk6gtp run example/echo-stress.js
+./out/bin/xk6 run example/echo-stress.js
 
 ./out/bin/pgw
 ```
@@ -49,4 +49,8 @@ pre-commit install
 # mob programing
 co-author hook > .git/hooks/prepare-commit-msg
 chmod +x .git/hooks/prepare-commit-msg
+
+# create docker image
+make docker-build
+make docker-release
 ```

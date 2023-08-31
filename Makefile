@@ -2,9 +2,10 @@
 GOCMD=go
 GOTEST=$(GOCMD) test
 GOVET=$(GOCMD) vet
-#brunch name version
-VERSION := $(shell git rev-parse --abbrev-ref HEAD)
-DOCKER_REGISTRY?= #if set it should finished by /
+BINARY_NAME=xk6-gtp
+# brunch name version
+VERSION := 0.0.1
+DOCKER_REGISTRY?= ghcr.io/bbsakura/
 DIFF_FROM_BRANCH_NAME ?= origin/main
 
 ENTRY_POINT_DIR=cmd
@@ -35,7 +36,7 @@ clean: ## Remove build related file
 	rm -fr ./out/bin
 
 xk6build: ## Package the project
-	xk6 build --with github.com/bbsakura/xk6-gtp@latest=$(shell pwd) --output ./out/bin/xk6gtp
+	xk6 build --with github.com/bbsakura/xk6-gtp@latest=$(shell pwd) --output ./out/bin/xk6
 
 ## Test:
 test: ## Run the tests of the project
