@@ -26,4 +26,4 @@ WORKDIR /app
 COPY --from=builder --chown=k6:k6 /go/bin/k6 ./
 COPY --from=builder --chown=k6:k6 /go/src/app ./
 
-ENTRYPOINT [ "k6" ]
+ENTRYPOINT [ "/app/k6" ]
