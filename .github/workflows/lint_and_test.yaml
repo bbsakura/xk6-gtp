@@ -1,16 +1,16 @@
 name: lint_and_test
 
 on:
- push:
+  push:
 
 jobs:
   golangci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v4
         with:
-          go-version: ^1.20
-      - uses: actions/checkout@v3
+          go-version: ^1.21
+      - uses: actions/checkout@v4
       - name: setup asdf
         uses: asdf-vm/actions/setup@3dcedf44f74a5d84ca0aacf1e1b0c18649db6f01
       - name: set env ASDF_PYTHON_DEFAULT_PACKAGES_FILE
