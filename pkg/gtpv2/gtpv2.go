@@ -40,7 +40,6 @@ var (
 )
 
 func New() *RootModule {
-	fmt.Println("New RootModule")
 	return &RootModule{
 		dialPool: new(sync.Map),
 	}
@@ -273,51 +272,74 @@ func (c *K6GTPv2Client) CheckRecvEchoResponse(seq uint32) (bool, error) {
 	return true, nil
 }
 
-func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32, imsi string) (bool, error) {
+func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32, imsi string) (EnumIFCause, error) {
+	causeRes := EnumIFCause(0)
 	sess, err := c.Conn.GetSessionByIMSI(imsi)
 	if err != nil {
-		return false, err
+		return causeRes, err
 	}
-	fmt.Println(c.timeout)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.timeout)*time.Second)
 	defer cancel()
 	res, err := GetMessage[*message.CreateSessionResponse](ctx, c.sessions, message.MsgTypeCreateSessionResponse, seq)
 	if err != nil {
-		return false, err
+		return causeRes, err
+	}
+	if causeIE := res.Cause; causeIE != nil {
+		cause, err := causeIE.Cause()
+		if err != nil {
+			return causeRes, err
+		}
+		causeRes = EnumIFCause(cause)
 	}
 	if fteidcIE := res.PGWS5S8FTEIDC; fteidcIE != nil {
 		it, err := fteidcIE.InterfaceType()
 		if err != nil {
-			return true, nil
+			return causeRes, nil
 		}
 		teid, err := fteidcIE.TEID()
 		if err != nil {
-			return true, nil
+			return causeRes, nil
 		}
 		sess.AddTEID(it, teid)
 	}
-	return true, nil
+	return causeRes, nil
 }
 
-func (c *K6GTPv2Client) CheckRecvDeleteSessionResponse(seq uint32) (bool, error) {
+func (c *K6GTPv2Client) CheckRecvDeleteSessionResponse(seq uint32) (EnumIFCause, error) {
+	causeRes := EnumIFCause(0)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.timeout)*time.Second)
 	defer cancel()
-	_, err := GetMessage[*message.DeleteSessionResponse](ctx, c.sessions, message.MsgTypeDeleteSessionResponse, seq)
+	res, err := GetMessage[*message.DeleteSessionResponse](ctx, c.sessions, message.MsgTypeDeleteSessionResponse, seq)
 	if err != nil {
-		return false, err
+		return causeRes, err
 	}
-	return true, nil
+	if causeIE := res.Cause; causeIE != nil {
+		cause, err := causeIE.Cause()
+		if err != nil {
+			return causeRes, err
+		}
+		causeRes = EnumIFCause(cause)
+	}
+	return causeRes, nil
 }
 
-func (c *K6GTPv2Client) CheckRecvModifyBearerResponse(seq uint32) (bool, error) {
+func (c *K6GTPv2Client) CheckRecvModifyBearerResponse(seq uint32) (EnumIFCause, error) {
+	causeRes := EnumIFCause(0)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.timeout)*time.Second)
 	defer cancel()
-	_, err := GetMessage[*message.ModifyBearerResponse](ctx, c.sessions, message.MsgTypeModifyBearerResponse, seq)
+	res, err := GetMessage[*message.ModifyBearerResponse](ctx, c.sessions, message.MsgTypeModifyBearerResponse, seq)
 	if err != nil {
-		return false, err
+		return causeRes, err
 	}
-	return true, nil
+	if causeIE := res.Cause; causeIE != nil {
+		cause, err := causeIE.Cause()
+		if err != nil {
+			return causeRes, err
+		}
+		causeRes = EnumIFCause(cause)
+	}
+	return causeRes, nil
 }
 
 func (c *K6GTPv2Client) Close() error {

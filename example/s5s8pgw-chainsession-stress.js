@@ -15,6 +15,7 @@ export default function (){
             if_type_name: "IFTypeS5S8SGWGTPC"
         });
     }
+    const CauseRequestAccepted = 16;
     const csr_res = client.checkSendCreateSessionRequestS5S8(
         "127.0.0.1:2123",
          {
@@ -36,7 +37,7 @@ export default function (){
             ambrdl: 100000000,
         }
     )
-    check (csr_res, {
+    check (csr_res == CauseRequestAccepted, {
         'csr is success': (res) => true === res,
     });
 
@@ -64,7 +65,7 @@ export default function (){
         ambrul: 200000000,
         ambrdl: 200000000,
     })
-    check (mbr_res, {
+    check (mbr_res == CauseRequestAccepted, {
         'mbr is success': (res) => true === res,
     });
 
@@ -76,7 +77,7 @@ export default function (){
             epsbearerid: 100,
         }
     )
-    check (dsr_res, {
+    check (dsr_res == CauseRequestAccepted, {
         'dsr is success': (res) => true === res,
     });
     client.close()

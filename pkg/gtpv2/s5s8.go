@@ -225,27 +225,27 @@ func (c *K6GTPv2Client) genS5S8SessionIE(options S5S8SgwParams, cteidIE, uteidIE
 	return ielist
 }
 
-func (c *K6GTPv2Client) CheckSendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (bool, error) {
+func (c *K6GTPv2Client) CheckSendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (EnumIFCause, error) {
 	_, seq, err := c.SendCreateSessionRequestS5S8(daddr, options)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	res, err := c.CheckRecvCreateSessionResponse(seq, options.Imsi)
 	return res, err
 }
 
-func (c *K6GTPv2Client) CheckSendDeleteSessionRequestS5S8(daddr string, options S5S8SgwParams) (bool, error) {
+func (c *K6GTPv2Client) CheckSendDeleteSessionRequestS5S8(daddr string, options S5S8SgwParams) (EnumIFCause, error) {
 	seq, err := c.SendDeleteSessionRequestS5S8(daddr, options)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	return c.CheckRecvDeleteSessionResponse(seq)
 }
 
-func (c *K6GTPv2Client) CheckSendModifyBearerRequestS5S8(daddr string, options S5S8SgwParams) (bool, error) {
+func (c *K6GTPv2Client) CheckSendModifyBearerRequestS5S8(daddr string, options S5S8SgwParams) (EnumIFCause, error) {
 	seq, err := c.SendModifyBearerRequestS5S8(daddr, options)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	return c.CheckRecvModifyBearerResponse(seq)
 }

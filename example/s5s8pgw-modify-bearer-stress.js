@@ -34,12 +34,14 @@ export default function (){
         ambrdl: 100000000,
     }
     const csr_res = client.checkSendCreateSessionRequestS5S8("127.0.0.1:2123", options)
-    check (csr_res, {
+    const CauseRequestAccepted = 16;
+
+    check (csr_res == CauseRequestAccepted, {
         'csr is success': (res) => true === res,
     });
 
     const mbr_res = client.checkSendModifyBearerRequestS5S8("", options)
-    check (mbr_res, {
+    check (mbr_res == CauseRequestAccepted, {
         'mbr is success': (res) => true === res,
     });
 
