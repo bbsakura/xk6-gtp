@@ -81,6 +81,7 @@ type K6GTPv2Client struct {
 	vu       modules.VU
 	Conn     *gtpv2.Conn
 	sessions *sync.Map
+	timeout  int64
 }
 
 // NewClient is the JS constructor for the grpc Client.
@@ -88,6 +89,7 @@ func (c *ModuleInstance) NewK6GTPv2Client(call goja.ConstructorCall) *goja.Objec
 	cli := &K6GTPv2Client{
 		vu:       c.vu,
 		sessions: &sync.Map{},
+		timeout:  3,
 	}
 	rt := c.vu.Runtime()
 	return rt.ToValue(cli).ToObject(rt)
@@ -106,6 +108,7 @@ func (c *ModuleInstance) NewK6GTPv2ClientWithConnect(call goja.ConstructorCall) 
 		cli = &K6GTPv2Client{
 			vu:       c.vu,
 			sessions: &sync.Map{},
+			timeout:  3,
 		}
 		_, err := cli.Connect(options)
 		if err != nil {
@@ -191,6 +194,10 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 	return false, nil
 }
 
+func (c *K6GTPv2Client) SetTimeout(timeout int64) {
+	c.timeout = timeout
+}
+
 func GetMessage[PT *T, T any](ctx context.Context, sessions *sync.Map, msgType uint8, seq uint32) (PT, error) {
 	for {
 		// TODO reduce cpu usage
@@ -257,7 +264,7 @@ func (c *K6GTPv2Client) CheckSendEchoRequestWithReturnResponse(daddr string) (bo
 }
 
 func (c *K6GTPv2Client) CheckRecvEchoResponse(seq uint32) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.timeout)*time.Second)
 	defer cancel()
 	_, err := GetMessage[*message.EchoResponse](ctx, c.sessions, message.MsgTypeEchoResponse, seq)
 	if err != nil {
@@ -271,8 +278,9 @@ func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32, imsi string) 
 	if err != nil {
 		return false, err
 	}
+	fmt.Println(c.timeout)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.timeout)*time.Second)
 	defer cancel()
 	res, err := GetMessage[*message.CreateSessionResponse](ctx, c.sessions, message.MsgTypeCreateSessionResponse, seq)
 	if err != nil {
@@ -293,7 +301,7 @@ func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32, imsi string) 
 }
 
 func (c *K6GTPv2Client) CheckRecvDeleteSessionResponse(seq uint32) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.timeout)*time.Second)
 	defer cancel()
 	_, err := GetMessage[*message.DeleteSessionResponse](ctx, c.sessions, message.MsgTypeDeleteSessionResponse, seq)
 	if err != nil {
@@ -303,7 +311,7 @@ func (c *K6GTPv2Client) CheckRecvDeleteSessionResponse(seq uint32) (bool, error)
 }
 
 func (c *K6GTPv2Client) CheckRecvModifyBearerResponse(seq uint32) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.timeout)*time.Second)
 	defer cancel()
 	_, err := GetMessage[*message.ModifyBearerResponse](ctx, c.sessions, message.MsgTypeModifyBearerResponse, seq)
 	if err != nil {
