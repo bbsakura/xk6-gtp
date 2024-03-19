@@ -22,6 +22,7 @@ type S5S8SgwParams struct {
 	Apn         string
 	Eci         uint32
 	Epsbearerid uint8
+	PdnType     uint8 // 1:v4, 2:v6, 3:v4v6, 4:non ip
 	UplaneIE    TEIDParams
 	CplaneSgwIE TEIDParams
 	CplanePgwIE TEIDParams
@@ -51,10 +52,15 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 		cteidIE = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, options.CplaneSgwIE.Teid, localIP, "")
 	}
 	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
-
+	if uteidIE == nil {
+		return nil, 0, fmt.Errorf("uteidIE is null, unexpected error")
+	}
 	sess, seq, err := c.Conn.CreateSession(d,
 		c.genS5S8SessionIE(options, cteidIE, uteidIE, localIP)...,
 	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed conn.CreateSession: %w", err)
+	}
 	sess.AddTEID(uteidIE.MustInterfaceType(), uteidIE.MustTEID())
 	c.Conn.RegisterSession(cteidIE.MustTEID(), sess)
 	return sess, seq, err
@@ -199,7 +205,7 @@ func (c *K6GTPv2Client) genS5S8SessionIE(options S5S8SgwParams, cteidIE, uteidIE
 		ie.NewRATType(gtpv2.RATTypeEUTRAN),
 		cteidIE,
 		ie.NewSelectionMode(gtpv2.SelectionModeMSorNetworkProvidedAPNSubscribedVerified),
-		ie.NewPDNType(gtpv2.PDNTypeIPv4),
+		ie.NewPDNType(options.PdnType),
 		ie.NewPDNAddressAllocation("0.0.0.0"),
 		ie.NewAPNRestriction(gtpv2.APNRestrictionPublic2),
 		ie.NewAggregateMaximumBitRate(options.Ambrul, options.Ambrdl),

@@ -20,13 +20,17 @@ const version = "v0.0.1"
 type (
 	// RootModule is the global module instance that will create module
 	// instances for each VU.
-	RootModule struct{}
+	RootModule struct {
+		dialPool *sync.Map
+		mu       sync.Mutex
+	}
 
 	// ModuleInstance represents an instance of the GRPC module for every VU.
 	ModuleInstance struct {
 		Version string
 		vu      modules.VU
 		exports map[string]interface{}
+		rm      *RootModule
 	}
 )
 
@@ -35,16 +39,25 @@ var (
 	_ modules.Instance = &ModuleInstance{}
 )
 
+func New() *RootModule {
+	fmt.Println("New RootModule")
+	return &RootModule{
+		dialPool: new(sync.Map),
+	}
+}
+
 // NewModuleInstance implements the modules.Module interface to return
 // a new instance for each VU.
-func (*RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
+func (r *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 	mi := &ModuleInstance{
 		Version: version,
 		vu:      vu,
 		exports: make(map[string]interface{}),
+		rm:      r,
 	}
 
 	mi.exports["K6GTPv2Client"] = mi.NewK6GTPv2Client
+	mi.exports["K6GTPv2ClientWithConnect"] = mi.NewK6GTPv2ClientWithConnect
 	mi.exports["GenerateDummyIMSI"] = GenerateDummyIMSI
 	return mi
 }
@@ -72,15 +85,77 @@ type K6GTPv2Client struct {
 
 // NewClient is the JS constructor for the grpc Client.
 func (c *ModuleInstance) NewK6GTPv2Client(call goja.ConstructorCall) *goja.Object {
-	rt := c.vu.Runtime()
 	cli := &K6GTPv2Client{
 		vu:       c.vu,
 		sessions: &sync.Map{},
 	}
+	rt := c.vu.Runtime()
 	return rt.ToValue(cli).ToObject(rt)
 }
 
+func (c *ModuleInstance) NewK6GTPv2ClientWithConnect(call goja.ConstructorCall) *goja.Object {
+	c.rm.mu.Lock()
+	defer c.rm.mu.Unlock()
+	op := call.Arguments[0].Export()
+	options, err := MapToConnectionOptions(op.(map[string]interface{}))
+	if err != nil {
+		panic(err)
+	}
+	cli := c.rm.connGetPool(options.Saddr)
+	if cli == nil {
+		cli = &K6GTPv2Client{
+			vu:       c.vu,
+			sessions: &sync.Map{},
+		}
+		_, err := cli.Connect(options)
+		if err != nil {
+			panic(err)
+		}
+		c.rm.connSetPool(options.Saddr, cli)
+	}
+	rt := c.vu.Runtime()
+	return rt.ToValue(cli).ToObject(rt)
+}
+
+func (c *RootModule) connSetPool(saddr string, gtpv2 *K6GTPv2Client) {
+	c.dialPool.Store(saddr, gtpv2)
+}
+
+func (c *RootModule) connGetPool(saddr string) *K6GTPv2Client {
+	if gtpv2, ok := c.dialPool.Load(saddr); ok {
+		return gtpv2.(*K6GTPv2Client)
+	}
+	return nil
+}
+
+func MapToConnectionOptions(m map[string]interface{}) (ConnectionOptions, error) {
+	var co ConnectionOptions
+	var ok bool
+	if countFloat, ok := m["count"].(int64); ok {
+		co.Count = int(countFloat)
+	} else {
+		return ConnectionOptions{}, fmt.Errorf("count must be a number, but was %T", m["count"])
+	}
+
+	if co.Daddr, ok = m["daddr"].(string); !ok {
+		return ConnectionOptions{}, fmt.Errorf("daddr must be a string, but was %T", m["daddr"])
+	}
+
+	if co.Saddr, ok = m["saddr"].(string); !ok {
+		return ConnectionOptions{}, fmt.Errorf("saddr must be a string, but was %T", m["saddr"])
+	}
+
+	if co.IfTypeName, ok = m["if_type_name"].(string); !ok {
+		return ConnectionOptions{}, fmt.Errorf("if_type_name must be a string, but was %T", m["if_type_name"])
+	}
+
+	return co, nil
+}
+
 func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
+	if c.Conn != nil {
+		return true, nil // already connected
+	}
 	var err error
 	saddr, err := net.ResolveUDPAddr("udp", options.Saddr)
 	if err != nil {
@@ -113,7 +188,6 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 	setHandlers(conn, c.sessions)
 
 	c.Conn = conn
-
 	return false, nil
 }
 
@@ -198,21 +272,18 @@ func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32, imsi string) 
 		return false, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	res, err := GetMessage[*message.CreateSessionResponse](ctx, c.sessions, message.MsgTypeCreateSessionResponse, seq)
 	if err != nil {
 		return false, err
 	}
-	fmt.Println(res)
 	if fteidcIE := res.PGWS5S8FTEIDC; fteidcIE != nil {
 		it, err := fteidcIE.InterfaceType()
-		fmt.Println(it)
 		if err != nil {
 			return true, nil
 		}
 		teid, err := fteidcIE.TEID()
-		fmt.Println(teid)
 		if err != nil {
 			return true, nil
 		}

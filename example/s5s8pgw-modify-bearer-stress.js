@@ -25,6 +25,7 @@ export default function (){
         rat: "EUTRAN",
         apn: "apn",
         eci: 1,
+        pdntype:1,
         epsbearerid: 1,
         uplane_ie:{
             teid: 1,
