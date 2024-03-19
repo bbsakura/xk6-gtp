@@ -25,6 +25,7 @@ export default function (){
         rat: "EUTRAN",
         apn: "apn",
         eci: 1,
+        pdntype:1,
         epsbearerid: 1,
         uplane_ie: {
             teid: 1
@@ -39,17 +40,19 @@ export default function (){
         ambrdl: 100000000,
     }
     const csr_res = client.checkSendCreateSessionRequestS5S8("127.0.0.1:2123", options)
-    check (csr_res, {
+
+    const CauseRequestAccepted = 16;
+    check (csr_res == CauseRequestAccepted, {
         'csr is success': (res) => true === res,
     });
 
     const mbr_res = client.checkSendModifyBearerRequestS5S8("127.0.0.1:2123", options)
-    check (mbr_res, {
+    check (mbr_res == CauseRequestAccepted, {
         'mbr is success': (res) => true === res,
     });
 
-    const dsr_res = client.checkSendDeleteSessionRequestS5S8("127.0.0.1:2123",options)
-    check (dsr_res, {
+    const dsr_res = client.checkSendDeleteSessionRequestS5S8("127.0.0.1:2123", options)
+    check (dsr_res == CauseIMSIIMEINotKnown, {
         'dsr is success': (res) => true === res,
     });
     client.close()

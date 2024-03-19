@@ -7,5 +7,5 @@ import (
 )
 
 func init() {
-	modules.Register("k6/x/gtpv2", new(gtpv2.RootModule))
+	modules.Register("k6/x/gtpv2", gtpv2.New())
 }

@@ -36,7 +36,8 @@ clean: ## Remove build related file
 	rm -fr ./out/bin
 
 xk6build: ## Package the project
-	xk6 build --with github.com/bbsakura/xk6-gtp@latest=$(shell pwd) --output ./out/bin/xk6
+	xk6 build --with github.com/grafana/xk6-output-prometheus-remote@v0.3.1 \
+	--with github.com/bbsakura/xk6-gtp@latest=$(shell pwd) --output ./out/bin/xk6
 
 ## Test:
 test: ## Run the tests of the project
