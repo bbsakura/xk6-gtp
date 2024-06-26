@@ -19,7 +19,7 @@ jobs:
           echo "legacy_version_file = yes" > ~/.asdfrc
       - name: asdf cache
         id: asdf_cache_id
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.asdf
           key: ${{ runner.os }}-asdf-${{ hashFiles('.tool-versions') }}
@@ -32,7 +32,7 @@ jobs:
         run: pre-commit install
       - name: asdf go cache
         id: asdf_go_cache_id
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.asdf/installs/golang
           key: ${{ runner.os }}-asdf-${{ hashFiles('.tool-versions') }}-go-${{ hashFiles('**/go.sum') }}
@@ -44,7 +44,7 @@ jobs:
           go mod tidy
           make install-go-tools
       - name: go mod cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/go/pkg/mod
