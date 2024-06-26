@@ -12,7 +12,7 @@ jobs:
           go-version: ^1.21
       - uses: actions/checkout@v4
       - name: setup asdf
-        uses: asdf-vm/actions/setup@3dcedf44f74a5d84ca0aacf1e1b0c18649db6f01
+        uses: asdf-vm/actions/setup@6278efebb38ae025cc91dd008910f549e775a8c8
       - name: set env ASDF_PYTHON_DEFAULT_PACKAGES_FILE
         run: |
           export ASDF_PYTHON_DEFAULT_PACKAGES_FILE=$(pwd)
@@ -27,7 +27,7 @@ jobs:
             ${{ runner.os }}-asdf-
       - name: asdf install
         if: steps.asdf_cache_id.outputs.cache-hit != 'true'
-        uses: asdf-vm/actions/install@3dcedf44f74a5d84ca0aacf1e1b0c18649db6f01
+        uses: asdf-vm/actions/install@6278efebb38ae025cc91dd008910f549e775a8c8
       - name: pre-commit install
         run: pre-commit install
       - name: asdf go cache
