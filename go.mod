@@ -6,7 +6,7 @@ toolchain go1.22.5
 
 require (
 	github.com/dmarkham/enumer v1.5.10
-	github.com/dop251/goja v0.0.0-20240804150220-aafb077cb27b
+	github.com/dop251/goja v0.0.0-20240806095544-3491d4a58fbe
 	github.com/elisescu/tty-share v0.6.2
 	github.com/erkanzileli/co-author v0.0.7
 	github.com/golangci/golangci-lint v1.59.1
@@ -63,7 +63,7 @@ require (
 	github.com/daixiang0/gci v0.13.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/denis-tingaikin/go-header v0.5.0 // indirect
-	github.com/dlclark/regexp2 v1.10.0 // indirect
+	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/elisescu/pty v1.0.2 // indirect
 	github.com/ettle/strcase v0.2.0 // indirect
 	github.com/evanw/esbuild v0.21.2 // indirect
