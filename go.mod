@@ -6,7 +6,7 @@ toolchain go1.23.1
 
 require (
 	github.com/dmarkham/enumer v1.5.10
-	github.com/dop251/goja v0.0.0-20240806095544-3491d4a58fbe
+	github.com/dop251/goja v0.0.0-20241009100908-5f46f2705ca3
 	github.com/elisescu/tty-share v0.6.2
 	github.com/erkanzileli/co-author v0.0.7
 	github.com/golangci/golangci-lint v1.59.1
