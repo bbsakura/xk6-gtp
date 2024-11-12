@@ -7,55 +7,26 @@ jobs:
   golangci:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: ^1.21
-      - uses: actions/checkout@v4
-      - name: setup asdf
-        uses: asdf-vm/actions/setup@6278efebb38ae025cc91dd008910f549e775a8c8
-      - name: set env ASDF_PYTHON_DEFAULT_PACKAGES_FILE
+          go-version-file: ./go.mod
+          cache-dependency-path: |
+            go.sum
+      - uses: jdx/mise-action@v2
+      - name: add go bin to GITHUB PATH
         run: |
-          export ASDF_PYTHON_DEFAULT_PACKAGES_FILE=$(pwd)
-          echo "legacy_version_file = yes" > ~/.asdfrc
-      - name: asdf cache
-        id: asdf_cache_id
-        uses: actions/cache@v4
-        with:
-          path: ~/.asdf
-          key: ${{ runner.os }}-asdf-${{ hashFiles('.tool-versions') }}
-          restore-keys: |
-            ${{ runner.os }}-asdf-
-      - name: asdf install
-        if: steps.asdf_cache_id.outputs.cache-hit != 'true'
-        uses: asdf-vm/actions/install@6278efebb38ae025cc91dd008910f549e775a8c8
+          echo "$(go env GOROOT)/bin" >> $GITHUB_PATH
+      - name: go mod tidy
+        run: go mod tidy
+      - name: make install go tools
+        run: make install-go-tools
       - name: pre-commit install
         run: pre-commit install
-      - name: asdf go cache
-        id: asdf_go_cache_id
-        uses: actions/cache@v4
-        with:
-          path: ~/.asdf/installs/golang
-          key: ${{ runner.os }}-asdf-${{ hashFiles('.tool-versions') }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-asdf-go-
-      - name: go mod tidy and install
-        if: steps.asdf_go_cache_id.outputs.cache-hit != 'true'
-        run: |
-          go mod tidy
-          make install-go-tools
-      - name: go mod cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v1.61.0
       - name: build
         run: make build
       - name: testing
