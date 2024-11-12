@@ -12,8 +12,11 @@ jobs:
         with:
           go-version-file: ./go.mod
           cache-dependency-path: |
-             go.sum
+            go.sum
       - uses: jdx/mise-action@v2
+      - name: add go bin to GITHUB PATH
+        run: |
+          echo "$(go env GOROOT)/bin" >> $GITHUB_PATH
       - name: go mod tidy
         run: go mod tidy
       - name: make install go tools
