@@ -1,8 +1,8 @@
 module github.com/bbsakura/xk6-gtp
 
-go 1.21
+go 1.22.1
 
-toolchain go1.23.1
+toolchain go1.23.3
 
 require (
 	github.com/dmarkham/enumer v1.5.10
@@ -15,7 +15,7 @@ require (
 	go.k6.io/k6 v0.52.0
 	go.k6.io/xk6 v0.12.2
 	golang.org/x/tools v0.24.0
-	honnef.co/go/tools v0.4.7
+	honnef.co/go/tools v0.5.1
 )
 
 require (
@@ -26,7 +26,7 @@ require (
 	github.com/Antonboom/errname v0.1.13 // indirect
 	github.com/Antonboom/nilnil v0.1.9 // indirect
 	github.com/Antonboom/testifylint v1.3.1 // indirect
-	github.com/BurntSushi/toml v1.4.0 // indirect
+	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
 	github.com/Crocmagnon/fatcontext v0.2.2 // indirect
 	github.com/Djarvur/go-err113 v0.0.0-20210108212216-aea10b59be24 // indirect
 	github.com/GaijinEntertainment/go-exhaustruct/v3 v3.2.0 // indirect
