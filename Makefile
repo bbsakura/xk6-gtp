@@ -64,7 +64,7 @@ docker-release: ## Release the container with tag latest and version
 
 ## Golang:
 install-go-tools: ## install project go tools
-	cat tools.go | awk -F'"' '/_/ {print $$2s}' | xargs -tI {} go install {}
+	sh scripts/install-go-tools.sh
 
 go-gen: ## go:generate invocations
 	go generate ./...
@@ -72,6 +72,11 @@ go-gen: ## go:generate invocations
 ## mise:
 install-dev-pkg: ## install .tool-version
 	mise install
+
+# go-dependency-sync
+go-dep-sync:
+	go install github.com/grafana/go-depsync@latest
+	go-depsync --gomod go.mod --parent go.k6.io/k6 2| sh
 
 ## Help:
 help: ## Show this help.
