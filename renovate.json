@@ -2,5 +2,26 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>bbsakura/renovate-config"
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": "!/^go.k6.io\/(k6|xk6)$/",
+      "matchManagers": [
+        "gomod"
+      ],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "^scripts/install-go-tools.sh$"
+      ],
+      "matchStrings": [
+        "go install (?<depName>[^@]+?)@(?<currentValue>.+)\n"
+      ],
+      "datasourceTemplate": "go"
+    }
   ]
 }

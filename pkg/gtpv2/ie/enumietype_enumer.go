@@ -65,7 +65,7 @@ func (i EnumIEType) String() string {
 	case 162 <= i && i <= 213:
 		i -= 162
 		return _EnumIETypeName_7[_EnumIETypeIndex_7[i]:_EnumIETypeIndex_7[i+1]]
-	case 254 <= i && i <= 255:
+	case 254 <= i && i == 255:
 		i -= 254
 		return _EnumIETypeName_8[_EnumIETypeIndex_8[i]:_EnumIETypeIndex_8[i+1]]
 	default:

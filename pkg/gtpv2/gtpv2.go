@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/grafana/sobek"
 	"github.com/pkg/errors"
 	"github.com/wmnsk/go-gtp/gtpv2"
 	"github.com/wmnsk/go-gtp/gtpv2/ie"
@@ -84,7 +84,7 @@ type K6GTPv2Client struct {
 }
 
 // NewClient is the JS constructor for the grpc Client.
-func (c *ModuleInstance) NewK6GTPv2Client(call goja.ConstructorCall) *goja.Object {
+func (c *ModuleInstance) NewK6GTPv2Client(call sobek.ConstructorCall) *sobek.Object {
 	cli := &K6GTPv2Client{
 		vu:       c.vu,
 		sessions: &sync.Map{},
@@ -94,7 +94,7 @@ func (c *ModuleInstance) NewK6GTPv2Client(call goja.ConstructorCall) *goja.Objec
 	return rt.ToValue(cli).ToObject(rt)
 }
 
-func (c *ModuleInstance) NewK6GTPv2ClientWithConnect(call goja.ConstructorCall) *goja.Object {
+func (c *ModuleInstance) NewK6GTPv2ClientWithConnect(call sobek.ConstructorCall) *sobek.Object {
 	c.rm.mu.Lock()
 	defer c.rm.mu.Unlock()
 	op := call.Arguments[0].Export()
@@ -230,7 +230,7 @@ func GetHandler(dst *sync.Map, msgType uint8) func(c *gtpv2.Conn, senderAddr net
 	}
 }
 
-func (c *K6GTPv2Client) Exports() *goja.Object {
+func (c *K6GTPv2Client) Exports() *sobek.Object {
 	rt := c.vu.Runtime()
 
 	return rt.ToValue(c).ToObject(rt)
