@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "local>bbsakura/renovate-config"
+    "github>bbsakura/renovate-config"
   ],
   "packageRules": [
     {
@@ -9,6 +9,10 @@
       "matchManagers": [
         "gomod"
       ],
+      "enabled": false
+    },
+    {
+      "matchPackageNames": "go.k6.io/xk6/cmd/xk6",
       "enabled": false
     }
   ],
