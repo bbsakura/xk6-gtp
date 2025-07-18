@@ -1,5 +1,5 @@
 exclude: "^docs/|^vendor|^.vscode"
-default_stages: [commit, manual]
+default_stages: [pre-commit, manual]
 
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -17,7 +17,7 @@ repos:
   rev: v3.5.0
   hooks:
     - id: branch-name-check
-      stages: [push]
+      stages: [pre-push]
 - repo: https://github.com/TekWizely/pre-commit-golang
   rev: v1.0.0-rc.1
   hooks:
