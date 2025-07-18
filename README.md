@@ -1,16 +1,15 @@
 # xk6-gtp
 
-Client extension for interacting with a GTP protocol in your k6 test.
+A client extension for interacting with the GTP protocol in your k6 tests.
 
-🚧 This project is a WIP... 🚧
 
 ## Preparation
 
-Requires packages and tools.
+Required packages and tools:
 
 - [mise](https://github.com/jdx/mise)
 
-Install tools required for development.
+Install the tools required for development:
 
 ```shell=
 make install-dev-pkg
@@ -46,9 +45,9 @@ make build
 
 ## Special Thanks
 
-This PoC takes full advantage of [go-gtp](https://github.com/wmnsk/go-gtp). Thanks to @wmnsk and all developers.
+This PoC takes full advantage of [go-gtp](https://github.com/wmnsk/go-gtp). Thanks to @wmnsk and all the developers.
 
-## Developers Settings
+## Developer Settings
 
 ```shell
 # Format, lint, commit message validation, etc.
