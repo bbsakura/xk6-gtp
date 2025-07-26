@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.1](https://github.com/bbsakura/xk6-gtp/compare/v0.1.0...v0.1.1) (2025-07-26)
+
+
+### Bug Fixes
+
+* fix Dockerfile syntax ([6bdce25](https://github.com/bbsakura/xk6-gtp/commit/6bdce251cb351bd4a08f20b7350301b308c48011))
+* fix test script ([6bdce25](https://github.com/bbsakura/xk6-gtp/commit/6bdce251cb351bd4a08f20b7350301b308c48011))
+* update renovate configuration ([c6543fa](https://github.com/bbsakura/xk6-gtp/commit/c6543fac410c95206ea03cf6ca47d3b999582c12))
+* update renovate configuration ([ab674bf](https://github.com/bbsakura/xk6-gtp/commit/ab674bf7a739d9bbe5bd116e52967b3777b723d0))
+
 ## [0.1.0](https://github.com/bbsakura/xk6-gtp/compare/v0.0.1...v0.1.0) (2025-02-28)
 
 
