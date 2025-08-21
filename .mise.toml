@@ -1,6 +1,6 @@
 [tools]
 go = "1.25.0"
 python = "3.13.6"
-pre-commit = "4.2.0"
+pre-commit = "4.3.0"
 direnv = "2.37.1"
 jq = "1.6"
