@@ -1,53 +1,67 @@
+version: "2"
 run:
-  timeout: 15m
   build-tags:
     - vrf_test
     - xdp_test
-
-output:
-  sort-results: true
-
 linters:
   enable:
     - depguard
     - gocritic
-    - gofumpt
-    - goimports
     - misspell
     - predeclared
     - revive
     - unconvert
-    - unused
-
+  settings:
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: github.com/stretchr/testify/assert
+              desc: Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert
+            - pkg: io/ioutil
+              desc: Use corresponding 'os' or 'io' functions instead.
+    errcheck:
+      exclude-functions:
+        - example/**
+    revive:
+      rules:
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unused-parameter
+        - name: unused-parameter
+          severity: warning
+          disabled: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+        path: _test.go
+      - linters:
+          - staticcheck
+        path: tools.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   max-same-issues: 0
-  exclude-rules:
-    - path: _test.go
-      linters:
-        - errcheck
-    - path: tools.go
-      linters:
-        - stylecheck
-
-linters-settings:
-  depguard:
-    rules:
-      main:
-        deny:
-        - pkg: "github.com/stretchr/testify/assert"
-          desc: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
-        - pkg: "io/ioutil"
-          desc: "Use corresponding 'os' or 'io' functions instead."
-  errcheck:
-    exclude-functions:
-      - example/**
-  goimports:
-    local-prefixes: github.com/bbsakura
-  gofumpt:
-    extra-rules: true
-  revive:
-    rules:
-      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unused-parameter
-      - name: unused-parameter
-        severity: warning
-        disabled: true
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/bbsakura
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
