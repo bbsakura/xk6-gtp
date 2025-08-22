@@ -1,6 +1,6 @@
 #!bash
 
-go install github.com/dmarkham/enumer@v1.5.11
+go install github.com/dmarkham/enumer@v1.6.1
 go install github.com/elisescu/tty-share@v0.6.2
 go install github.com/erkanzileli/co-author@v0.0.7
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.4.0
