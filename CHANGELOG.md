@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.1](https://github.com/bbsakura/xk6-gtp/compare/v0.1.0...v0.1.1) (2025-08-22)
+
+
+### Bug Fixes
+
+* correct variable references for session handling in CreateSession and ModifyBearer requests ([70e756d](https://github.com/bbsakura/xk6-gtp/commit/70e756dbadd864b8884d431ad2bad1d51d069d06))
+* **deps:** update module go.k6.io/k6 to v1.2.1 ([#91](https://github.com/bbsakura/xk6-gtp/issues/91)) ([6ba91c0](https://github.com/bbsakura/xk6-gtp/commit/6ba91c0b0c9a71ce88d286af77448ade991d2a93))
+* **deps:** update module go.k6.io/k6 to v1.2.2 ([#93](https://github.com/bbsakura/xk6-gtp/issues/93)) ([db1eaae](https://github.com/bbsakura/xk6-gtp/commit/db1eaae4d6a1d11d8f90274112ef60c5ef249812))
+* fix Dockerfile syntax ([6bdce25](https://github.com/bbsakura/xk6-gtp/commit/6bdce251cb351bd4a08f20b7350301b308c48011))
+* fix test script ([6bdce25](https://github.com/bbsakura/xk6-gtp/commit/6bdce251cb351bd4a08f20b7350301b308c48011))
+* update golangci-lint and migrate v2 configuration ([86f0689](https://github.com/bbsakura/xk6-gtp/commit/86f06899f18956cd5c6fe8c3a978b8d1099badd8))
+* update golangci-lint installation path and migrate v1 linters configuration ([fb0ec04](https://github.com/bbsakura/xk6-gtp/commit/fb0ec04928348301929f8f6008bb4004b11060bb))
+* update renovate configuration ([c6543fa](https://github.com/bbsakura/xk6-gtp/commit/c6543fac410c95206ea03cf6ca47d3b999582c12))
+* update renovate configuration ([ab674bf](https://github.com/bbsakura/xk6-gtp/commit/ab674bf7a739d9bbe5bd116e52967b3777b723d0))
+
 ## [0.1.0](https://github.com/bbsakura/xk6-gtp/compare/v0.0.1...v0.1.0) (2025-02-28)
 
 
