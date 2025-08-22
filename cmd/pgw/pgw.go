@@ -172,7 +172,7 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 
 	// PGW Cplane TEID
 	var s5cFTEID *ie.IE
-	if session.Subscriber.IMEI == "123451234567895" { // testing only
+	if session.IMEI == "123451234567895" { // testing only
 		s5cFTEID = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8PGWGTPC, 111, uIP, "").WithInstance(1)
 	} else {
 		s5cFTEID = c.NewSenderFTEID(cIP, "").WithInstance(1)
@@ -218,7 +218,7 @@ func handleCreateSessionRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mes
 	}
 
 	loggerCh <- fmt.Sprintf("Session created with S-GW for subscriber: %s;\n\tS5C S-GW: %s, TEID->: %#x, TEID<-: %#x",
-		session.Subscriber.IMSI, sgwAddr, s5sgwTEID, s5pgwTEID,
+		session.IMSI, sgwAddr, s5sgwTEID, s5pgwTEID,
 	)
 	return nil
 }
@@ -276,7 +276,7 @@ func handleModifyBearerRequest(c *gtpv2.Conn, sgwAddr net.Addr, msg message.Mess
 		return &gtpv2.RequiredIEMissingError{Type: ie.FullyQualifiedTEID}
 	}
 
-	seqn := reqFromSGW.Header.SequenceNumber
+	seqn := reqFromSGW.SequenceNumber
 
 	// cause: context not found
 	// TODO...
