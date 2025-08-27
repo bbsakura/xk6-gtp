@@ -98,8 +98,8 @@ github.com/stretchr/testify v1.10.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf
 github.com/wmnsk/go-gtp v0.8.6 h1:Z2lHnNlQ49jdySoWpcZPOsGPFjDb+5BQm9rO9Nn47E0=
 github.com/wmnsk/go-gtp v0.8.6/go.mod h1:7Ja5ik6qMx451Oa4LXdXYl53277fL/X7Ob8nCb5T6TY=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
-go.k6.io/k6 v1.2.2 h1:NB1Wwm8pD3xuxggAtYnp8e3lbcDRTGFyqHwiit0hkcs=
-go.k6.io/k6 v1.2.2/go.mod h1:p26sefGdpTY/fnqeWGfiGw5Lir+7Aq73YgsL8sP1uU8=
+go.k6.io/k6 v1.2.3 h1:VBvF+NHhWFgJvvDTxZE3yH4MWtBy3F5zrM0TSCjmWrI=
+go.k6.io/k6 v1.2.3/go.mod h1:p26sefGdpTY/fnqeWGfiGw5Lir+7Aq73YgsL8sP1uU8=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
 go.opentelemetry.io/otel v1.37.0 h1:9zhNfelUvx0KBfu/gb+ZgeAfAgtWrfHJZcAqFC228wQ=
