@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/bbsakura/xk6-gtp/compare/v0.1.1...v0.1.2) (2025-08-28)
+
+
+### Bug Fixes
+
+* **deps:** update module go.k6.io/k6 to v1.2.3 ([#103](https://github.com/bbsakura/xk6-gtp/issues/103)) ([617e205](https://github.com/bbsakura/xk6-gtp/commit/617e205bcf3c69a0113d2f3dd0f4c9b941748848))
+
 ## [0.1.1](https://github.com/bbsakura/xk6-gtp/compare/v0.1.0...v0.1.1) (2025-08-22)
 
 
