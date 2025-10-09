@@ -18,7 +18,7 @@ function run_xk6gtp() {
 }
 
 # execute test scenarios
-for jsfile in example/*.js; do
+for jsfile in examples/*.js; do
     echo "run $jsfile"
     full_res=$(run_xk6gtp $jsfile)
     res=$(echo "$full_res" |grep 'checks_succeeded'|awk '{print $2}')
