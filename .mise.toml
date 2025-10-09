@@ -1,5 +1,5 @@
 [tools]
-go = "1.25.0"
+go = "1.25.2"
 python = "3.13.7"
 pre-commit = "4.3.0"
 direnv = "2.37.1"
