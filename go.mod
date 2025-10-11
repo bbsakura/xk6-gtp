@@ -6,13 +6,13 @@ require (
 	github.com/grafana/sobek v0.0.0-20250723111835-dd8a13f0d439
 	github.com/pkg/errors v0.9.1
 	github.com/wmnsk/go-gtp v0.8.6
-	go.k6.io/k6 v1.2.3
+	go.k6.io/k6 v1.3.0
 )
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
-	github.com/evanw/esbuild v0.25.8 // indirect
+	github.com/evanw/esbuild v0.25.9 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -46,7 +46,7 @@ require (
 	golang.org/x/time v0.12.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250728155136-f173205681a0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250728155136-f173205681a0 // indirect
-	google.golang.org/grpc v1.74.2 // indirect
-	google.golang.org/protobuf v1.36.7 // indirect
+	google.golang.org/grpc v1.75.0 // indirect
+	google.golang.org/protobuf v1.36.8 // indirect
 	gopkg.in/guregu/null.v3 v3.3.0 // indirect
 )
