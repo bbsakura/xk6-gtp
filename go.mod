@@ -6,7 +6,7 @@ require (
 	github.com/grafana/sobek v0.0.0-20250723111835-dd8a13f0d439
 	github.com/pkg/errors v0.9.1
 	github.com/wmnsk/go-gtp v0.8.6
-	go.k6.io/k6 v1.3.0
+	go.k6.io/k6 v1.4.2
 )
 
 require (
