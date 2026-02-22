@@ -24,7 +24,7 @@ jobs:
       - name: pre-commit install
         run: pre-commit install
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
       - name: build
