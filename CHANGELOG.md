@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0](https://github.com/bbsakura/xk6-gtp/compare/v0.1.1...v0.2.0) (2026-02-22)
+
+
+### Features
+
+* add initial smoke test for K6 GTPv2 client connection ([4855bb1](https://github.com/bbsakura/xk6-gtp/commit/4855bb1143cb4116f9761f1e425b09df724f261f))
+* rename folder name from example to examples ([486f55a](https://github.com/bbsakura/xk6-gtp/commit/486f55a7c986676ed12f6b52d8450f2d83f0d15a))
+
+
+### Bug Fixes
+
+* **deps:** update module go.k6.io/k6 to v1.2.3 ([#103](https://github.com/bbsakura/xk6-gtp/issues/103)) ([617e205](https://github.com/bbsakura/xk6-gtp/commit/617e205bcf3c69a0113d2f3dd0f4c9b941748848))
+* **deps:** update module go.k6.io/k6 to v1.3.0 ([#115](https://github.com/bbsakura/xk6-gtp/issues/115)) ([f803852](https://github.com/bbsakura/xk6-gtp/commit/f8038524ce72b1efa0d2dc893bfc58b54831de28))
+* **deps:** update module go.k6.io/k6 to v1.4.2 ([eb5cf03](https://github.com/bbsakura/xk6-gtp/commit/eb5cf0399e697ae943edf8a3f57a9e4a39f9ff72))
+* **deps:** update module go.k6.io/k6 to v1.4.2 ([ea41bed](https://github.com/bbsakura/xk6-gtp/commit/ea41bed33bffa63ebdc1a8440297b01b8ead2968))
+* run grafana/go-depsync ([5bc47c0](https://github.com/bbsakura/xk6-gtp/commit/5bc47c05b3a262294d4ecc6d03dfa58551c13456))
+
 ## [0.1.1](https://github.com/bbsakura/xk6-gtp/compare/v0.1.0...v0.1.1) (2025-08-22)
 
 
