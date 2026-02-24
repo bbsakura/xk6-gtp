@@ -7,5 +7,5 @@ go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
 go install go.k6.io/xk6/cmd/xk6@v0.13.4
 go install golang.org/x/tools/cmd/goimports@v0.42.0
 go install golang.org/x/tools/cmd/stringer@v0.42.0
-go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
+go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
 go install github.com/grafana/go-depsync@latest
