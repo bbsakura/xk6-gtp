@@ -263,11 +263,11 @@ type pendingEntry struct {
 func GetMessage[PT *T, T any](ctx context.Context, sessions *sync.Map, msgType uint8, seq uint32) (PT, error) {
 	msg, err := waitForMessage(ctx, sessions, msgType, seq)
 	if err != nil {
-		return (PT)(nil), err
+		return PT(nil), err
 	}
 	typed, ok := msg.(PT)
 	if !ok {
-		return (PT)(nil), fmt.Errorf("gtpv2: unexpected message type %T for seq=%d", msg, seq)
+		return PT(nil), fmt.Errorf("gtpv2: unexpected message type %T for seq=%d", msg, seq)
 	}
 	return typed, nil
 }
