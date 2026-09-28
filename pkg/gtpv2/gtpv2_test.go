@@ -1,0 +1,159 @@
+package gtpv2
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/wmnsk/go-gtp/gtpv2/message"
+	"go.k6.io/k6/js/modulestest"
+)
+
+// TestWaitForMessage_HandlerBeforeWaiter covers the fast-path where the
+// receive handler stores the response before the caller starts waiting.
+func TestWaitForMessage_HandlerBeforeWaiter(t *testing.T) {
+	sessions := &sync.Map{}
+	msg := message.NewEchoResponse(0)
+	h := storeMessageHandler(sessions, message.MsgTypeEchoResponse)
+	if err := h(nil, nil, msg); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	got, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, msg.Sequence())
+	if err != nil {
+		t.Fatalf("waitForMessage: %v", err)
+	}
+	if got != msg {
+		t.Fatalf("got %v, want %v", got, msg)
+	}
+	if _, ok := sessions.Load(sessionKey{MessageType: message.MsgTypeEchoResponse, Sequence: msg.Sequence()}); ok {
+		t.Fatal("expected pending entry to be cleared")
+	}
+}
+
+// TestWaitForMessage_WaiterBeforeHandler covers the rendezvous case where the
+// caller is already waiting when the handler delivers.
+func TestWaitForMessage_WaiterBeforeHandler(t *testing.T) {
+	sessions := &sync.Map{}
+	msg := message.NewEchoResponse(0)
+
+	ready := make(chan struct{})
+	got := make(chan message.Message, 1)
+	go func() {
+		close(ready)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		m, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, msg.Sequence())
+		if err != nil {
+			t.Errorf("waitForMessage: %v", err)
+			return
+		}
+		got <- m
+	}()
+
+	<-ready
+	// Give the waiter a moment to register.
+	time.Sleep(10 * time.Millisecond)
+
+	if err := storeMessageHandler(sessions, message.MsgTypeEchoResponse)(nil, nil, msg); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	select {
+	case m := <-got:
+		if m != msg {
+			t.Fatalf("got %v, want %v", m, msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waiter did not receive message")
+	}
+}
+
+// TestWaitForMessage_Timeout ensures cancellation propagates instead of busy
+// spinning.
+func TestWaitForMessage_Timeout(t *testing.T) {
+	sessions := &sync.Map{}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, 42)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error on timeout")
+	}
+	if elapsed >= 200*time.Millisecond {
+		t.Fatalf("waitForMessage took %s, expected ~20ms", elapsed)
+	}
+}
+
+// TestConnect_InitContextRejected verifies that Connect refuses to open a
+// socket when invoked from the init stage (VU state is nil).
+func TestConnect_InitContextRejected(t *testing.T) {
+	rt := modulestest.NewRuntime(t)
+	rm := New()
+	mi := rm.NewModuleInstance(rt.VU).(*ModuleInstance)
+	cli := &K6GTPv2Client{
+		rm:       mi.rm,
+		vu:       mi.vu,
+		sessions: &sync.Map{},
+		timeout:  3,
+	}
+
+	_, err := cli.Connect(ConnectionOptions{
+		Saddr: "127.0.0.1:0",
+		Daddr: "127.0.0.1:0",
+	})
+	if !errors.Is(err, errRunOnly) {
+		t.Fatalf("Connect from init context: got %v, want errRunOnly", err)
+	}
+}
+
+// TestRootModule_MetricsRegistered verifies that NewModuleInstance registers
+// all four extension metrics against the VU's Registry.
+func TestRootModule_MetricsRegistered(t *testing.T) {
+	rt := modulestest.NewRuntime(t)
+	rm := New()
+	_ = rm.NewModuleInstance(rt.VU)
+
+	if rm.metrics == nil {
+		t.Fatal("metrics not registered")
+	}
+	if rm.metrics.reqDuration == nil || rm.metrics.reqTotal == nil ||
+		rm.metrics.respCause == nil || rm.metrics.timeoutTotal == nil {
+		t.Fatalf("one or more metrics not registered: %+v", rm.metrics)
+	}
+	if got, want := rm.metrics.reqDuration.Name, "gtpv2_req_duration"; got != want {
+		t.Errorf("reqDuration name: got %q, want %q", got, want)
+	}
+}
+
+// TestRootModule_OnceAcrossVUs verifies that once.Do runs a single time even
+// as multiple VU instances race NewModuleInstance concurrently.
+func TestRootModule_OnceAcrossVUs(t *testing.T) {
+	rm := New()
+
+	var runs int32
+	rm.metricsOnce.Do(func() { atomic.AddInt32(&runs, 1) })
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rt := modulestest.NewRuntime(t)
+			_ = rm.NewModuleInstance(rt.VU)
+		}()
+	}
+	wg.Wait()
+
+	if got := atomic.LoadInt32(&runs); got != 1 {
+		t.Fatalf("once.Do ran %d times, want 1", got)
+	}
+}

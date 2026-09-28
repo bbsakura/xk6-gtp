@@ -3,11 +3,22 @@ package gtpv2
 import (
 	"fmt"
 	"net"
-	"strings"
+	"time"
 
 	"github.com/wmnsk/go-gtp/gtpv2"
 	"github.com/wmnsk/go-gtp/gtpv2/ie"
 )
+
+// localHost returns the host portion of a net.Addr that carries a host:port
+// (or [host]:port for IPv6). Falls back to the raw string when SplitHostPort
+// cannot parse it, so ergonomics for callers passing bare IPs are preserved.
+func localHost(a net.Addr) string {
+	s := a.String()
+	if host, _, err := net.SplitHostPort(s); err == nil {
+		return host
+	}
+	return s
+}
 
 type S5S8SgwParams struct {
 	Imsi        string
@@ -39,10 +50,10 @@ type TEIDParams struct {
 func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, uint32, error) {
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
-		return nil, 0, fmt.Errorf("resolve udp error")
+		return nil, 0, fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err)
 	}
 
-	localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
+	localIP := localHost(c.Conn.LocalAddr())
 
 	// todo v6
 	var cteidIE *ie.IE
@@ -61,6 +72,7 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed conn.CreateSession: %w", err)
 	}
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
 	sess.AddTEID(uteidIE.MustInterfaceType(), uteidIE.MustTEID())
 	c.Conn.RegisterSession(cteidIE.MustTEID(), sess)
 	return sess, seq, err
@@ -98,15 +110,18 @@ func (c *K6GTPv2Client) SendDeleteSessionRequestS5S8(daddr string, options S5S8S
 		s5Session,
 		ie.NewEPSBearerID(options.Epsbearerid),
 	)
+	if err == nil {
+		c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeDeleteSession)
+	}
 	return seq, err
 }
 
 func (c *K6GTPv2Client) registerDummyS5S8Session(daddr string, options S5S8SgwParams) (*gtpv2.Session, error) {
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
-		return nil, fmt.Errorf("resolve udp error")
+		return nil, fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err)
 	}
-	localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
+	localIP := localHost(c.Conn.LocalAddr())
 	cteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, options.CplaneSgwIE.Teid, localIP, "")
 	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
 	s5Session, err := c.Conn.ParseCreateSession(d, c.genS5S8SessionIE(options, cteidIE, uteidIE, localIP)...)
@@ -192,6 +207,9 @@ func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8Sg
 		),
 		ie.NewRecovery(0),
 	)
+	if err == nil {
+		c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeModifyBearer)
+	}
 	return seq, err
 }
 
@@ -226,26 +244,37 @@ func (c *K6GTPv2Client) genS5S8SessionIE(options S5S8SgwParams, cteidIE, uteidIE
 }
 
 func (c *K6GTPv2Client) CheckSendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (EnumIFCause, error) {
+	start := time.Now()
 	_, seq, err := c.SendCreateSessionRequestS5S8(daddr, options)
 	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, time.Since(start), true)
 		return 0, err
 	}
 	res, err := c.CheckRecvCreateSessionResponse(seq, options.Imsi)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, time.Since(start), err != nil)
 	return res, err
 }
 
 func (c *K6GTPv2Client) CheckSendDeleteSessionRequestS5S8(daddr string, options S5S8SgwParams) (EnumIFCause, error) {
+	start := time.Now()
 	seq, err := c.SendDeleteSessionRequestS5S8(daddr, options)
 	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeDeleteSession, time.Since(start), true)
 		return 0, err
 	}
-	return c.CheckRecvDeleteSessionResponse(seq)
+	res, err := c.CheckRecvDeleteSessionResponse(seq)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeDeleteSession, time.Since(start), err != nil)
+	return res, err
 }
 
 func (c *K6GTPv2Client) CheckSendModifyBearerRequestS5S8(daddr string, options S5S8SgwParams) (EnumIFCause, error) {
+	start := time.Now()
 	seq, err := c.SendModifyBearerRequestS5S8(daddr, options)
 	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeModifyBearer, time.Since(start), true)
 		return 0, err
 	}
-	return c.CheckRecvModifyBearerResponse(seq)
+	res, err := c.CheckRecvModifyBearerResponse(seq)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeModifyBearer, time.Since(start), err != nil)
+	return res, err
 }
