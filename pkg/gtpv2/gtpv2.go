@@ -72,6 +72,7 @@ func (r *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 	mi.exports["GenerateDummyIMSI"] = GenerateDummyIMSI
 	mi.exports["ie"] = ieExports()
 	mi.exports["msg"] = msgExports()
+	mi.exports["IFType"] = ifTypeExports()
 	return mi
 }
 

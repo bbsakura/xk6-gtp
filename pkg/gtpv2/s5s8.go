@@ -39,6 +39,47 @@ type S5S8SgwParams struct {
 	CplanePgwIE TEIDParams
 	Ambrul      uint32
 	Ambrdl      uint32
+
+	// IfTypeCplane overrides the FTEID interface type used for the
+	// local-side C-plane bearer. Zero falls back to IFTypeS5S8SGWGTPC (6)
+	// to preserve backward-compatible S5/S8-SGW behaviour. Set to an
+	// IFType value (see gtpv2.IFType.*) to drive S11, S8, S2b, S16, ...
+	// flows through the same helpers.
+	IfTypeCplane uint8
+	// IfTypeUplane overrides the FTEID interface type used for the
+	// local-side U-plane bearer. Zero falls back to IFTypeS5S8SGWGTPU (4).
+	IfTypeUplane uint8
+	// IfTypeCplanePeer overrides the FTEID interface type expected on the
+	// remote side (used by Delete / Modify session lookups). Zero falls
+	// back to IFTypeS5S8PGWGTPC (7).
+	IfTypeCplanePeer uint8
+}
+
+// cplaneIfType resolves the effective C-plane FTEID interface type, applying
+// the S5/S8-SGW default when the caller has not overridden it.
+func (p S5S8SgwParams) cplaneIfType() uint8 {
+	if p.IfTypeCplane == 0 {
+		return gtpv2.IFTypeS5S8SGWGTPC
+	}
+	return p.IfTypeCplane
+}
+
+// uplaneIfType resolves the effective U-plane FTEID interface type, applying
+// the S5/S8-SGW default when the caller has not overridden it.
+func (p S5S8SgwParams) uplaneIfType() uint8 {
+	if p.IfTypeUplane == 0 {
+		return gtpv2.IFTypeS5S8SGWGTPU
+	}
+	return p.IfTypeUplane
+}
+
+// cplanePeerIfType resolves the effective peer-side C-plane FTEID interface
+// type, applying the S5/S8-PGW default when unset.
+func (p S5S8SgwParams) cplanePeerIfType() uint8 {
+	if p.IfTypeCplanePeer == 0 {
+		return gtpv2.IFTypeS5S8PGWGTPC
+	}
+	return p.IfTypeCplanePeer
 }
 
 type TEIDParams struct {
@@ -60,9 +101,9 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 	if options.CplaneSgwIE.Teid == 0 {
 		cteidIE = c.Conn.NewSenderFTEID(localIP, "")
 	} else {
-		cteidIE = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, options.CplaneSgwIE.Teid, localIP, "")
+		cteidIE = ie.NewFullyQualifiedTEID(options.cplaneIfType(), options.CplaneSgwIE.Teid, localIP, "")
 	}
-	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
+	uteidIE := ie.NewFullyQualifiedTEID(options.uplaneIfType(), options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
 	if uteidIE == nil {
 		return nil, 0, fmt.Errorf("uteidIE is null, unexpected error")
 	}
@@ -99,7 +140,7 @@ func (c *K6GTPv2Client) SendDeleteSessionRequestS5S8(daddr string, options S5S8S
 		}
 		// teid override
 		if options.CplanePgwIE.Teid == 0 {
-			options.CplanePgwIE.Teid, err = s5Session.GetTEID(gtpv2.IFTypeS5S8PGWGTPC)
+			options.CplanePgwIE.Teid, err = s5Session.GetTEID(options.cplanePeerIfType())
 			if err != nil {
 				return 0, err
 			}
@@ -122,8 +163,8 @@ func (c *K6GTPv2Client) registerDummyS5S8Session(daddr string, options S5S8SgwPa
 		return nil, fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err)
 	}
 	localIP := localHost(c.Conn.LocalAddr())
-	cteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, options.CplaneSgwIE.Teid, localIP, "")
-	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
+	cteidIE := ie.NewFullyQualifiedTEID(options.cplaneIfType(), options.CplaneSgwIE.Teid, localIP, "")
+	uteidIE := ie.NewFullyQualifiedTEID(options.uplaneIfType(), options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
 	s5Session, err := c.Conn.ParseCreateSession(d, c.genS5S8SessionIE(options, cteidIE, uteidIE, localIP)...)
 	if err != nil {
 		return nil, err
@@ -155,19 +196,19 @@ func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8Sg
 		}
 		// teid override
 		if options.CplanePgwIE.Teid == 0 {
-			options.CplanePgwIE.Teid, err = s5Session.GetTEID(gtpv2.IFTypeS5S8PGWGTPC)
+			options.CplanePgwIE.Teid, err = s5Session.GetTEID(options.cplanePeerIfType())
 			if err != nil {
 				return 0, err
 			}
 		}
 		if options.CplaneSgwIE.Teid == 0 {
-			options.CplaneSgwIE.Teid, err = s5Session.GetTEID(gtpv2.IFTypeS5S8SGWGTPC)
+			options.CplaneSgwIE.Teid, err = s5Session.GetTEID(options.cplaneIfType())
 			if err != nil {
 				return 0, err
 			}
 		}
 		if options.UplaneIE.Teid == 0 {
-			options.UplaneIE.Teid, err = s5Session.GetTEID(gtpv2.IFTypeS5S8SGWGTPU)
+			options.UplaneIE.Teid, err = s5Session.GetTEID(options.uplaneIfType())
 			if err != nil {
 				return 0, err
 			}
@@ -188,7 +229,7 @@ func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8Sg
 
 		// todo Support multiple cplane teids
 		ie.NewFullyQualifiedTEID(
-			gtpv2.IFTypeS5S8SGWGTPC,
+			options.cplaneIfType(),
 			options.CplaneSgwIE.Teid,
 			options.CplaneSgwIE.IP,
 			options.CplaneSgwIE.IP6,
@@ -200,7 +241,7 @@ func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8Sg
 		ie.NewBearerContext(
 			ie.NewEPSBearerID(options.Epsbearerid),
 			ie.NewFullyQualifiedTEID(
-				gtpv2.IFTypeS5S8SGWGTPU,
+				options.uplaneIfType(),
 				options.UplaneIE.Teid,
 				options.UplaneIE.IP,
 				options.UplaneIE.IP6,
