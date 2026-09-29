@@ -361,6 +361,27 @@ func (c *K6GTPv2Client) CheckSendEchoRequestWithReturnResponse(daddr string) (bo
 	return ok, err
 }
 
+// TryEcho sends an Echo Request and waits for the paired response, returning a
+// SendResult with the sequence, whether it succeeded, the elapsed round-trip
+// time, and — on timeout — a Timeout=true flag. Echo does not carry a Cause IE
+// so Cause is always 0 on success.
+func (c *K6GTPv2Client) TryEcho(daddr string) *SendResult {
+	start := time.Now()
+	seq, err := c.SendEchoRequest(daddr)
+	if err != nil {
+		return newSendError(time.Since(start), err)
+	}
+	_, recvErr := c.CheckRecvEchoResponse(seq)
+	elapsed := time.Since(start)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeEcho, elapsed, recvErr != nil)
+	if recvErr != nil {
+		r := newSendError(elapsed, recvErr)
+		r.Sequence = seq
+		return r
+	}
+	return newSendOK(seq, 0, elapsed)
+}
+
 func (c *K6GTPv2Client) recvCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(c.iterCtx(), c.timeoutDuration())
 }

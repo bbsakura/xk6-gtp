@@ -279,3 +279,64 @@ func (c *K6GTPv2Client) CheckSendModifyBearerRequestS5S8(daddr string, options S
 	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeModifyBearer, time.Since(start), err != nil)
 	return res, err
 }
+
+// TryCreateSessionS5S8 sends a Create Session Request over S5/S8 and waits for
+// the paired response. Unlike CheckSendCreateSessionRequestS5S8, the returned
+// SendResult exposes the Cause value, the elapsed round-trip time, and a
+// Timeout flag so scripts can build flexible sequences without reaching into
+// CheckRecv* helpers directly.
+func (c *K6GTPv2Client) TryCreateSessionS5S8(daddr string, options S5S8SgwParams) *SendResult {
+	start := time.Now()
+	_, seq, err := c.SendCreateSessionRequestS5S8(daddr, options)
+	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, time.Since(start), true)
+		return newSendError(time.Since(start), err)
+	}
+	cause, recvErr := c.CheckRecvCreateSessionResponse(seq, options.Imsi)
+	elapsed := time.Since(start)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, elapsed, recvErr != nil)
+	if recvErr != nil {
+		r := newSendError(elapsed, recvErr)
+		r.Sequence = seq
+		return r
+	}
+	return newSendOK(seq, uint8(cause), elapsed)
+}
+
+// TryDeleteSessionS5S8 mirrors TryCreateSessionS5S8 for Delete Session.
+func (c *K6GTPv2Client) TryDeleteSessionS5S8(daddr string, options S5S8SgwParams) *SendResult {
+	start := time.Now()
+	seq, err := c.SendDeleteSessionRequestS5S8(daddr, options)
+	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeDeleteSession, time.Since(start), true)
+		return newSendError(time.Since(start), err)
+	}
+	cause, recvErr := c.CheckRecvDeleteSessionResponse(seq)
+	elapsed := time.Since(start)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeDeleteSession, elapsed, recvErr != nil)
+	if recvErr != nil {
+		r := newSendError(elapsed, recvErr)
+		r.Sequence = seq
+		return r
+	}
+	return newSendOK(seq, uint8(cause), elapsed)
+}
+
+// TryModifyBearerS5S8 mirrors TryCreateSessionS5S8 for Modify Bearer.
+func (c *K6GTPv2Client) TryModifyBearerS5S8(daddr string, options S5S8SgwParams) *SendResult {
+	start := time.Now()
+	seq, err := c.SendModifyBearerRequestS5S8(daddr, options)
+	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeModifyBearer, time.Since(start), true)
+		return newSendError(time.Since(start), err)
+	}
+	cause, recvErr := c.CheckRecvModifyBearerResponse(seq)
+	elapsed := time.Since(start)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeModifyBearer, elapsed, recvErr != nil)
+	if recvErr != nil {
+		r := newSendError(elapsed, recvErr)
+		r.Sequence = seq
+		return r
+	}
+	return newSendOK(seq, uint8(cause), elapsed)
+}
