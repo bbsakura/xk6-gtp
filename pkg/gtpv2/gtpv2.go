@@ -71,6 +71,7 @@ func (r *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 	mi.exports["K6GTPv2ClientWithConnect"] = mi.NewK6GTPv2ClientWithConnect
 	mi.exports["GenerateDummyIMSI"] = GenerateDummyIMSI
 	mi.exports["ie"] = ieExports()
+	mi.exports["msg"] = msgExports()
 	return mi
 }
 
@@ -381,6 +382,98 @@ func (c *K6GTPv2Client) TryEcho(daddr string) *SendResult {
 		return r
 	}
 	return newSendOK(seq, 0, elapsed)
+}
+
+// SendRaw dispatches an arbitrary GTPv2 message (typically built via
+// gtpv2.msg.*) to daddr and returns a SendHandle with the assigned sequence.
+// Pair the sequence with AwaitMessage to inspect the response. Cause and
+// timing are only recorded when the JS side later awaits — request_total is
+// emitted here so the counter still fires when the response is intentionally
+// dropped (abnormal-path tests).
+func (c *K6GTPv2Client) SendRaw(daddr string, msg message.Message) *SendHandle {
+	d, err := net.ResolveUDPAddr("udp", daddr)
+	if err != nil {
+		return &SendHandle{Error: fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err).Error()}
+	}
+	seq, err := c.Conn.SendMessageTo(msg, d)
+	if err != nil {
+		return &SendHandle{Error: err.Error()}
+	}
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), messageTypeTag(msg.MessageType()))
+	return &SendHandle{Ok: true, Sequence: seq}
+}
+
+// AwaitMessage waits up to timeoutMs milliseconds for a GTPv2 message with the
+// given type and sequence number. Extracts the Cause IE when the message type
+// carries one; otherwise Cause is 0. A handler for msgType is registered
+// idempotently on the underlying gtpv2.Conn so callers do not have to know in
+// advance which message types to hook up.
+func (c *K6GTPv2Client) AwaitMessage(msgType uint8, seq uint32, timeoutMs int64) *AwaitResult {
+	c.Conn.AddHandler(msgType, storeMessageHandler(c.sessions, msgType))
+	timeout := time.Duration(timeoutMs) * time.Millisecond
+	if timeoutMs <= 0 {
+		timeout = c.timeoutDuration()
+	}
+	ctx, cancel := context.WithTimeout(c.iterCtx(), timeout)
+	defer cancel()
+	start := time.Now()
+	msg, err := waitForMessage(ctx, c.sessions, msgType, seq)
+	elapsed := time.Since(start)
+	if err != nil {
+		return newAwaitError(elapsed, err)
+	}
+	return newAwaitOK(extractCause(msg), elapsed)
+}
+
+// messageTypeTag maps a GTPv2 numeric message type to the low-cardinality tag
+// value used for the metric emissions. Unknown types get their decimal code
+// so the metric never carries an unbounded string.
+func messageTypeTag(t uint8) string {
+	switch t {
+	case message.MsgTypeEchoRequest:
+		return msgTypeEcho
+	case message.MsgTypeCreateSessionRequest:
+		return msgTypeCreateSession
+	case message.MsgTypeDeleteSessionRequest:
+		return msgTypeDeleteSession
+	case message.MsgTypeModifyBearerRequest:
+		return msgTypeModifyBearer
+	default:
+		return causeString(t, true) // reuse the numeric formatter
+	}
+}
+
+// extractCause pulls the numeric Cause IE value from any message that carries
+// one, returning 0 when the message does not have Cause.
+func extractCause(msg message.Message) uint8 {
+	if ie := responseCauseIE(msg); ie != nil {
+		if v, err := ie.Cause(); err == nil {
+			return v
+		}
+	}
+	return 0
+}
+
+// responseCauseIE returns the Cause slot IE for the response message types
+// this extension knows about. Returns nil when the message does not carry
+// Cause. Kept as a type switch so we do not depend on go-gtp exposing a Cause
+// accessor method.
+func responseCauseIE(msg message.Message) *ie.IE {
+	switch m := msg.(type) {
+	case *message.CreateSessionResponse:
+		return m.Cause
+	case *message.DeleteSessionResponse:
+		return m.Cause
+	case *message.ModifyBearerResponse:
+		return m.Cause
+	case *message.CreateBearerResponse:
+		return m.Cause
+	case *message.UpdateBearerResponse:
+		return m.Cause
+	case *message.DeleteBearerResponse:
+		return m.Cause
+	}
+	return nil
 }
 
 // TryCreateSessionRaw sends a Create Session Request built from a

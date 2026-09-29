@@ -52,3 +52,20 @@ func TestNewSendOK(t *testing.T) {
 		t.Fatal("timeout should be false on success")
 	}
 }
+
+func TestNewAwaitError_Timeout(t *testing.T) {
+	r := newAwaitError(30*time.Millisecond, context.DeadlineExceeded)
+	if r.Ok || !r.Timeout {
+		t.Fatalf("expected ok=false, timeout=true; got %+v", r)
+	}
+	if r.ElapsedMs != 30 {
+		t.Fatalf("elapsed_ms: got %v, want 30", r.ElapsedMs)
+	}
+}
+
+func TestNewAwaitOK(t *testing.T) {
+	r := newAwaitOK(16, 5*time.Millisecond)
+	if !r.Ok || r.Timeout || r.Cause != 16 || r.ElapsedMs != 5 {
+		t.Fatalf("unexpected: %+v", r)
+	}
+}
