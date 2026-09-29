@@ -69,6 +69,7 @@ func (r *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 
 	mi.exports["K6GTPv2Client"] = mi.NewK6GTPv2Client
 	mi.exports["K6GTPv2ClientWithConnect"] = mi.NewK6GTPv2ClientWithConnect
+	mi.exports["K6GTPv2Responder"] = mi.NewK6GTPv2Responder
 	mi.exports["GenerateDummyIMSI"] = GenerateDummyIMSI
 	mi.exports["ie"] = ieExports()
 	mi.exports["msg"] = msgExports()
