@@ -98,6 +98,14 @@ type K6GTPv2Client struct {
 	Conn     *gtpv2.Conn
 	sessions *sync.Map
 	timeout  int64
+
+	// connCtx bounds the underlying gtpv2.Conn's read loop lifetime. It is
+	// created lazily in Connect and cancelled by Close. Deliberately not
+	// tied to modules.VU.Context() — that context is cancelled at each
+	// iteration boundary, which would close the socket after the first
+	// iteration and break subsequent sends.
+	connCtx    context.Context
+	connCancel context.CancelFunc
 }
 
 // NewClient is the JS constructor for the grpc Client.
@@ -230,14 +238,21 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 		return false, fmt.Errorf("count %d out of range [0, 255] for GTPv2 Restart Counter", options.Count)
 	}
 
+	// gtpv2.Dial's receive loop lives as long as the ctx we pass in, so bind
+	// it to a Client-scoped context rather than the per-iteration one. Close
+	// cancels it explicitly.
+	c.connCtx, c.connCancel = context.WithCancel(context.Background())
+	// #nosec G115 -- options.Count is bounded to [0, 255] by the check above.
 	conn, err := gtpv2.Dial(
-		c.iterCtx(),
+		c.connCtx,
 		saddr,
 		daddr,
 		uint8(iftype),
-		uint8(options.Count), //nolint:gosec // bounded above; Restart Counter is uint8 per 3GPP TS 29.274
+		uint8(options.Count),
 	)
 	if err != nil {
+		c.connCancel()
+		c.connCancel = nil
 		return false, fmt.Errorf("gtpv2 dial %s -> %s: %w", saddr, daddr, err)
 	}
 	// go-gtp starts the receive loop inside Dial; register handlers immediately
@@ -623,9 +638,14 @@ func (c *K6GTPv2Client) CheckRecvModifyBearerResponse(seq uint32) (EnumIFCause, 
 }
 
 func (c *K6GTPv2Client) Close() error {
-	err := c.Conn.Close()
-	if err != nil {
-		return err
+	if c.connCancel != nil {
+		c.connCancel()
+		c.connCancel = nil
 	}
-	return nil
+	if c.Conn == nil {
+		return nil
+	}
+	err := c.Conn.Close()
+	c.Conn = nil
+	return err
 }
