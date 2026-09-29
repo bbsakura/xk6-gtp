@@ -70,6 +70,7 @@ func (r *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 	mi.exports["K6GTPv2Client"] = mi.NewK6GTPv2Client
 	mi.exports["K6GTPv2ClientWithConnect"] = mi.NewK6GTPv2ClientWithConnect
 	mi.exports["GenerateDummyIMSI"] = GenerateDummyIMSI
+	mi.exports["ie"] = ieExports()
 	return mi
 }
 
@@ -380,6 +381,32 @@ func (c *K6GTPv2Client) TryEcho(daddr string) *SendResult {
 		return r
 	}
 	return newSendOK(seq, 0, elapsed)
+}
+
+// TryCreateSessionRaw sends a Create Session Request built from a
+// user-supplied list of IEs (typically composed via gtpv2.ie.*) and waits for
+// the paired response. imsi is required to look up the session on the receive
+// side; it must be present in the IE list.
+//
+// Use this instead of TryCreateSessionS5S8 when you need to omit, mutate, or
+// add IEs beyond what S5S8SgwParams exposes — for example to reproduce a
+// missing-IE cause code or an unexpected FTEID interface type.
+func (c *K6GTPv2Client) TryCreateSessionRaw(daddr, imsi string, ies []*ie.IE) *SendResult {
+	start := time.Now()
+	_, seq, err := c.SendCreateSessionRequest(daddr, ies...)
+	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, time.Since(start), true)
+		return newSendError(time.Since(start), err)
+	}
+	cause, recvErr := c.CheckRecvCreateSessionResponse(seq, imsi)
+	elapsed := time.Since(start)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, elapsed, recvErr != nil)
+	if recvErr != nil {
+		r := newSendError(elapsed, recvErr)
+		r.Sequence = seq
+		return r
+	}
+	return newSendOK(seq, uint8(cause), elapsed)
 }
 
 func (c *K6GTPv2Client) recvCtx() (context.Context, context.CancelFunc) {
