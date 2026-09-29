@@ -116,7 +116,7 @@ func TestConnect_InitContextRejected(t *testing.T) {
 }
 
 // TestRootModule_MetricsRegistered verifies that NewModuleInstance registers
-// all four extension metrics against the VU's Registry.
+// every extension metric against the VU's Registry.
 func TestRootModule_MetricsRegistered(t *testing.T) {
 	rt := modulestest.NewRuntime(t)
 	rm := New()
@@ -125,12 +125,32 @@ func TestRootModule_MetricsRegistered(t *testing.T) {
 	if rm.metrics == nil {
 		t.Fatal("metrics not registered")
 	}
-	if rm.metrics.reqDuration == nil || rm.metrics.reqTotal == nil ||
-		rm.metrics.respCause == nil || rm.metrics.timeoutTotal == nil {
-		t.Fatalf("one or more metrics not registered: %+v", rm.metrics)
+	names := []string{
+		rm.metrics.reqDuration.Name,
+		rm.metrics.reqTotal.Name,
+		rm.metrics.respCause.Name,
+		rm.metrics.timeoutTotal.Name,
+		rm.metrics.sendErrorTotal.Name,
+		rm.metrics.connReconnectTotal.Name,
 	}
-	if got, want := rm.metrics.reqDuration.Name, "gtpv2_req_duration"; got != want {
-		t.Errorf("reqDuration name: got %q, want %q", got, want)
+	for _, want := range []string{
+		"gtpv2_req_duration",
+		"gtpv2_req_total",
+		"gtpv2_resp_cause",
+		"gtpv2_timeout_total",
+		"gtpv2_send_error_total",
+		"gtpv2_conn_reconnect_total",
+	} {
+		found := false
+		for _, got := range names {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("metric %q not registered", want)
+		}
 	}
 }
 

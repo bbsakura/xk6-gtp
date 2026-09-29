@@ -13,6 +13,7 @@ const (
 	tagMsgType = "msg_type"
 	tagCause   = "cause"
 	tagError   = "error"
+	tagPeer    = "peer"
 
 	msgTypeEcho          = "echo"
 	msgTypeCreateSession = "create_session"
@@ -29,18 +30,22 @@ const (
 // gtpMetrics is the k6 metric set exposed by this extension. Registered
 // exactly once per k6 process via RootModule.NewModuleInstance.
 type gtpMetrics struct {
-	reqDuration  *metrics.Metric
-	reqTotal     *metrics.Metric
-	respCause    *metrics.Metric
-	timeoutTotal *metrics.Metric
+	reqDuration        *metrics.Metric
+	reqTotal           *metrics.Metric
+	respCause          *metrics.Metric
+	timeoutTotal       *metrics.Metric
+	sendErrorTotal     *metrics.Metric
+	connReconnectTotal *metrics.Metric
 }
 
 func registerMetrics(reg *metrics.Registry) *gtpMetrics {
 	return &gtpMetrics{
-		reqDuration:  reg.MustNewMetric("gtpv2_req_duration", metrics.Trend, metrics.Time),
-		reqTotal:     reg.MustNewMetric("gtpv2_req_total", metrics.Counter),
-		respCause:    reg.MustNewMetric("gtpv2_resp_cause", metrics.Counter),
-		timeoutTotal: reg.MustNewMetric("gtpv2_timeout_total", metrics.Counter),
+		reqDuration:        reg.MustNewMetric("gtpv2_req_duration", metrics.Trend, metrics.Time),
+		reqTotal:           reg.MustNewMetric("gtpv2_req_total", metrics.Counter),
+		respCause:          reg.MustNewMetric("gtpv2_resp_cause", metrics.Counter),
+		timeoutTotal:       reg.MustNewMetric("gtpv2_timeout_total", metrics.Counter),
+		sendErrorTotal:     reg.MustNewMetric("gtpv2_send_error_total", metrics.Counter),
+		connReconnectTotal: reg.MustNewMetric("gtpv2_conn_reconnect_total", metrics.Counter),
 	}
 }
 
@@ -83,6 +88,36 @@ func (m *gtpMetrics) pushTimeout(ctx context.Context, state *lib.State, msgType 
 	tags := state.Tags.GetCurrentValues().Tags.With(tagMsgType, msgType)
 	metrics.PushIfNotDone(ctx, state.Samples, metrics.Sample{
 		TimeSeries: metrics.TimeSeries{Metric: m.timeoutTotal, Tags: tags},
+		Time:       time.Now(),
+		Value:      1,
+	})
+}
+
+// pushSendError emits send_error_total when a request could not be dispatched
+// to the wire (address resolution failure, socket closed, etc). Distinct from
+// timeout_total, which fires on receive-side deadlines.
+func (m *gtpMetrics) pushSendError(ctx context.Context, state *lib.State, msgType string) {
+	if m == nil || state == nil {
+		return
+	}
+	tags := state.Tags.GetCurrentValues().Tags.With(tagMsgType, msgType)
+	metrics.PushIfNotDone(ctx, state.Samples, metrics.Sample{
+		TimeSeries: metrics.TimeSeries{Metric: m.sendErrorTotal, Tags: tags},
+		Time:       time.Now(),
+		Value:      1,
+	})
+}
+
+// pushReconnect emits conn_reconnect_total when a Client re-establishes its
+// underlying gtpv2.Conn (Connect after Close). The peer address is tagged so
+// dashboards can spot flapping on a specific PGW/SGW pair.
+func (m *gtpMetrics) pushReconnect(ctx context.Context, state *lib.State, peer string) {
+	if m == nil || state == nil {
+		return
+	}
+	tags := state.Tags.GetCurrentValues().Tags.With(tagPeer, peer)
+	metrics.PushIfNotDone(ctx, state.Samples, metrics.Sample{
+		TimeSeries: metrics.TimeSeries{Metric: m.connReconnectTotal, Tags: tags},
 		Time:       time.Now(),
 		Value:      1,
 	})

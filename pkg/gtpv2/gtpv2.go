@@ -106,6 +106,11 @@ type K6GTPv2Client struct {
 	// iteration and break subsequent sends.
 	connCtx    context.Context
 	connCancel context.CancelFunc
+
+	// hasConnected tracks whether Connect has ever completed on this Client,
+	// so a subsequent Connect (after Close) can emit reconnect metric rather
+	// than the first-connect no-op.
+	hasConnected bool
 }
 
 // NewClient is the JS constructor for the grpc Client.
@@ -260,6 +265,10 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 	setHandlers(conn, c.sessions)
 
 	c.Conn = conn
+	if c.hasConnected {
+		c.rm.metrics.pushReconnect(c.iterCtx(), c.vu.State(), options.Daddr)
+	}
+	c.hasConnected = true
 	return true, nil
 }
 
@@ -348,25 +357,31 @@ func storeMessageHandler(dst *sync.Map, msgType uint8) func(c *gtpv2.Conn, sende
 func (c *K6GTPv2Client) SendEchoRequest(daddr string) (uint32, error) {
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeEcho)
 		return 0, fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err)
 	}
 	seq, err := c.Conn.EchoRequest(d)
-	if err == nil {
-		c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeEcho)
+	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeEcho)
+		return seq, err
 	}
-	return seq, err
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeEcho)
+	return seq, nil
 }
 
 func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*gtpv2.Session, uint32, error) {
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
 		return nil, 0, fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err)
 	}
 	sess, seq, err := c.Conn.CreateSession(d, ie...)
-	if err == nil {
-		c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
+	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
+		return sess, seq, err
 	}
-	return sess, seq, err
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
+	return sess, seq, nil
 }
 
 func (c *K6GTPv2Client) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
@@ -408,15 +423,18 @@ func (c *K6GTPv2Client) TryEcho(daddr string) *SendResult {
 // emitted here so the counter still fires when the response is intentionally
 // dropped (abnormal-path tests).
 func (c *K6GTPv2Client) SendRaw(daddr string, msg message.Message) *SendHandle {
+	msgTypeTag := messageTypeTag(msg.MessageType())
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeTag)
 		return &SendHandle{Error: fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err).Error()}
 	}
 	seq, err := c.Conn.SendMessageTo(msg, d)
 	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeTag)
 		return &SendHandle{Error: err.Error()}
 	}
-	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), messageTypeTag(msg.MessageType()))
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeTag)
 	return &SendHandle{Ok: true, Sequence: seq}
 }
 

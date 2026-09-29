@@ -91,6 +91,7 @@ type TEIDParams struct {
 func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, uint32, error) {
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
 		return nil, 0, fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err)
 	}
 
@@ -111,6 +112,7 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 		c.genS5S8SessionIE(options, cteidIE, uteidIE, localIP)...,
 	)
 	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
 		return nil, 0, fmt.Errorf("failed conn.CreateSession: %w", err)
 	}
 	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
@@ -151,10 +153,12 @@ func (c *K6GTPv2Client) SendDeleteSessionRequestS5S8(daddr string, options S5S8S
 		s5Session,
 		ie.NewEPSBearerID(options.Epsbearerid),
 	)
-	if err == nil {
-		c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeDeleteSession)
+	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeDeleteSession)
+		return seq, err
 	}
-	return seq, err
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeDeleteSession)
+	return seq, nil
 }
 
 func (c *K6GTPv2Client) registerDummyS5S8Session(daddr string, options S5S8SgwParams) (*gtpv2.Session, error) {
@@ -249,10 +253,12 @@ func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8Sg
 		),
 		ie.NewRecovery(0),
 	)
-	if err == nil {
-		c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeModifyBearer)
+	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeModifyBearer)
+		return seq, err
 	}
-	return seq, err
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeModifyBearer)
+	return seq, nil
 }
 
 func (c *K6GTPv2Client) genS5S8SessionIE(options S5S8SgwParams, cteidIE, uteidIE *ie.IE, localIP string) []*ie.IE {
