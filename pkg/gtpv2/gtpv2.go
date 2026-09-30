@@ -13,6 +13,7 @@ import (
 	"github.com/wmnsk/go-gtp/gtpv2/ie"
 	"github.com/wmnsk/go-gtp/gtpv2/message"
 	"go.k6.io/k6/js/modules"
+	"go.k6.io/k6/js/promises"
 )
 
 const version = "v0.0.1"
@@ -445,19 +446,69 @@ func (c *K6GTPv2Client) SendRaw(daddr string, msg message.Message) *SendHandle {
 // advance which message types to hook up.
 func (c *K6GTPv2Client) AwaitMessage(msgType uint8, seq uint32, timeoutMs int64) *AwaitResult {
 	c.Conn.AddHandler(msgType, storeMessageHandler(c.sessions, msgType))
-	timeout := time.Duration(timeoutMs) * time.Millisecond
-	if timeoutMs <= 0 {
-		timeout = c.timeoutDuration()
-	}
+	timeout := effectiveTimeout(timeoutMs, c.timeoutDuration())
 	ctx, cancel := context.WithTimeout(c.iterCtx(), timeout)
 	defer cancel()
+	return c.awaitAndRecord(ctx, msgType, seq)
+}
+
+// AwaitMessageAsync is the Promise-returning sibling of AwaitMessage. Each
+// call spawns a wait goroutine that resolves the Promise once the response
+// arrives (or times out), so scripts can Promise.all over multiple in-flight
+// requests dispatched from the same Client — the sessions sync.Map keyed by
+// (msgType, seq) provides correlation, and each Client owns its own gtpv2.Conn
+// so responses cannot leak to a sibling Client.
+func (c *K6GTPv2Client) AwaitMessageAsync(msgType uint8, seq uint32, timeoutMs int64) *sobek.Promise {
+	promise, resolve, reject := promises.New(c.vu)
+	if c.Conn == nil {
+		reject(errors.New("gtpv2: AwaitMessageAsync called before Connect"))
+		return promise
+	}
+	c.Conn.AddHandler(msgType, storeMessageHandler(c.sessions, msgType))
+	timeout := effectiveTimeout(timeoutMs, c.timeoutDuration())
+	// Snapshot iteration context up front so a slow event loop that lands
+	// the resolve callback after iteration end still has a valid deadline
+	// parent (WithTimeout will fire the deadline first regardless).
+	parent := c.iterCtx()
+	go func() {
+		ctx, cancel := context.WithTimeout(parent, timeout)
+		defer cancel()
+		result := c.awaitAndRecord(ctx, msgType, seq)
+		resolve(result)
+	}()
+	return promise
+}
+
+// awaitAndRecord performs the waitForMessage + metric emission both sync and
+// async paths share. Returns an AwaitResult ready to hand back to JS.
+func (c *K6GTPv2Client) awaitAndRecord(ctx context.Context, msgType uint8, seq uint32) *AwaitResult {
 	start := time.Now()
 	msg, err := waitForMessage(ctx, c.sessions, msgType, seq)
 	elapsed := time.Since(start)
-	if err != nil {
+	tag := messageTypeTag(msgType)
+	state := c.vu.State()
+	switch {
+	case err == nil:
+		cause := extractCause(msg)
+		if state != nil {
+			c.rm.metrics.pushResponse(c.iterCtx(), state, tag, causeString(cause, true))
+		}
+		return newAwaitOK(cause, elapsed)
+	case errors.Is(err, context.DeadlineExceeded):
+		if state != nil {
+			c.rm.metrics.pushTimeout(c.iterCtx(), state, tag)
+		}
+		return newAwaitError(elapsed, err)
+	default:
 		return newAwaitError(elapsed, err)
 	}
-	return newAwaitOK(extractCause(msg), elapsed)
+}
+
+func effectiveTimeout(requestedMs int64, fallback time.Duration) time.Duration {
+	if requestedMs <= 0 {
+		return fallback
+	}
+	return time.Duration(requestedMs) * time.Millisecond
 }
 
 // messageTypeTag maps a GTPv2 numeric message type to the low-cardinality tag

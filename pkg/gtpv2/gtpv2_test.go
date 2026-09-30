@@ -12,6 +12,71 @@ import (
 	"go.k6.io/k6/js/modulestest"
 )
 
+// TestWaitForMessage_MultiplexedByKey verifies that two concurrent waiters
+// on distinct (msgType, seq) keys resolve to their respective messages,
+// mirroring the correlation the async Promise API relies on.
+func TestWaitForMessage_MultiplexedByKey(t *testing.T) {
+	sessions := &sync.Map{}
+	msgA := message.NewEchoResponse(1)
+	msgB := message.NewEchoResponse(2)
+
+	ready := make(chan struct{}, 2)
+	gotA := make(chan message.Message, 1)
+	gotB := make(chan message.Message, 1)
+	go func() {
+		ready <- struct{}{}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		m, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, 1)
+		if err != nil {
+			t.Errorf("waitA: %v", err)
+			return
+		}
+		gotA <- m
+	}()
+	go func() {
+		ready <- struct{}{}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		m, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, 2)
+		if err != nil {
+			t.Errorf("waitB: %v", err)
+			return
+		}
+		gotB <- m
+	}()
+
+	<-ready
+	<-ready
+	time.Sleep(10 * time.Millisecond)
+
+	handler := storeMessageHandler(sessions, message.MsgTypeEchoResponse)
+	// Deliver out of order (B first, then A) to prove correlation is by key.
+	if err := handler(nil, nil, msgB); err != nil {
+		t.Fatalf("handlerB: %v", err)
+	}
+	if err := handler(nil, nil, msgA); err != nil {
+		t.Fatalf("handlerA: %v", err)
+	}
+
+	select {
+	case m := <-gotA:
+		if m != msgA {
+			t.Fatalf("waiter A got %v, want %v", m, msgA)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waiter A never resolved")
+	}
+	select {
+	case m := <-gotB:
+		if m != msgB {
+			t.Fatalf("waiter B got %v, want %v", m, msgB)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waiter B never resolved")
+	}
+}
+
 // TestWaitForMessage_HandlerBeforeWaiter covers the fast-path where the
 // receive handler stores the response before the caller starts waiting.
 func TestWaitForMessage_HandlerBeforeWaiter(t *testing.T) {
