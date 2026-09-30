@@ -3,11 +3,22 @@ package gtpv2
 import (
 	"fmt"
 	"net"
-	"strings"
+	"time"
 
 	"github.com/wmnsk/go-gtp/gtpv2"
 	"github.com/wmnsk/go-gtp/gtpv2/ie"
 )
+
+// localHost returns the host portion of a net.Addr that carries a host:port
+// (or [host]:port for IPv6). Falls back to the raw string when SplitHostPort
+// cannot parse it, so ergonomics for callers passing bare IPs are preserved.
+func localHost(a net.Addr) string {
+	s := a.String()
+	if host, _, err := net.SplitHostPort(s); err == nil {
+		return host
+	}
+	return s
+}
 
 type S5S8SgwParams struct {
 	Imsi        string
@@ -28,6 +39,47 @@ type S5S8SgwParams struct {
 	CplanePgwIE TEIDParams
 	Ambrul      uint32
 	Ambrdl      uint32
+
+	// IfTypeCplane overrides the FTEID interface type used for the
+	// local-side C-plane bearer. Zero falls back to IFTypeS5S8SGWGTPC (6)
+	// to preserve backward-compatible S5/S8-SGW behaviour. Set to an
+	// IFType value (see gtpv2.IFType.*) to drive S11, S8, S2b, S16, ...
+	// flows through the same helpers.
+	IfTypeCplane uint8
+	// IfTypeUplane overrides the FTEID interface type used for the
+	// local-side U-plane bearer. Zero falls back to IFTypeS5S8SGWGTPU (4).
+	IfTypeUplane uint8
+	// IfTypeCplanePeer overrides the FTEID interface type expected on the
+	// remote side (used by Delete / Modify session lookups). Zero falls
+	// back to IFTypeS5S8PGWGTPC (7).
+	IfTypeCplanePeer uint8
+}
+
+// cplaneIfType resolves the effective C-plane FTEID interface type, applying
+// the S5/S8-SGW default when the caller has not overridden it.
+func (p S5S8SgwParams) cplaneIfType() uint8 {
+	if p.IfTypeCplane == 0 {
+		return gtpv2.IFTypeS5S8SGWGTPC
+	}
+	return p.IfTypeCplane
+}
+
+// uplaneIfType resolves the effective U-plane FTEID interface type, applying
+// the S5/S8-SGW default when the caller has not overridden it.
+func (p S5S8SgwParams) uplaneIfType() uint8 {
+	if p.IfTypeUplane == 0 {
+		return gtpv2.IFTypeS5S8SGWGTPU
+	}
+	return p.IfTypeUplane
+}
+
+// cplanePeerIfType resolves the effective peer-side C-plane FTEID interface
+// type, applying the S5/S8-PGW default when unset.
+func (p S5S8SgwParams) cplanePeerIfType() uint8 {
+	if p.IfTypeCplanePeer == 0 {
+		return gtpv2.IFTypeS5S8PGWGTPC
+	}
+	return p.IfTypeCplanePeer
 }
 
 type TEIDParams struct {
@@ -39,19 +91,20 @@ type TEIDParams struct {
 func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (*gtpv2.Session, uint32, error) {
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
-		return nil, 0, fmt.Errorf("resolve udp error")
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
+		return nil, 0, fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err)
 	}
 
-	localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
+	localIP := localHost(c.Conn.LocalAddr())
 
 	// todo v6
 	var cteidIE *ie.IE
 	if options.CplaneSgwIE.Teid == 0 {
 		cteidIE = c.Conn.NewSenderFTEID(localIP, "")
 	} else {
-		cteidIE = ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, options.CplaneSgwIE.Teid, localIP, "")
+		cteidIE = ie.NewFullyQualifiedTEID(options.cplaneIfType(), options.CplaneSgwIE.Teid, localIP, "")
 	}
-	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
+	uteidIE := ie.NewFullyQualifiedTEID(options.uplaneIfType(), options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
 	if uteidIE == nil {
 		return nil, 0, fmt.Errorf("uteidIE is null, unexpected error")
 	}
@@ -59,8 +112,10 @@ func (c *K6GTPv2Client) SendCreateSessionRequestS5S8(daddr string, options S5S8S
 		c.genS5S8SessionIE(options, cteidIE, uteidIE, localIP)...,
 	)
 	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
 		return nil, 0, fmt.Errorf("failed conn.CreateSession: %w", err)
 	}
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
 	sess.AddTEID(uteidIE.MustInterfaceType(), uteidIE.MustTEID())
 	c.Conn.RegisterSession(cteidIE.MustTEID(), sess)
 	return sess, seq, err
@@ -87,7 +142,7 @@ func (c *K6GTPv2Client) SendDeleteSessionRequestS5S8(daddr string, options S5S8S
 		}
 		// teid override
 		if options.CplanePgwIE.Teid == 0 {
-			options.CplanePgwIE.Teid, err = s5Session.GetTEID(gtpv2.IFTypeS5S8PGWGTPC)
+			options.CplanePgwIE.Teid, err = s5Session.GetTEID(options.cplanePeerIfType())
 			if err != nil {
 				return 0, err
 			}
@@ -98,17 +153,22 @@ func (c *K6GTPv2Client) SendDeleteSessionRequestS5S8(daddr string, options S5S8S
 		s5Session,
 		ie.NewEPSBearerID(options.Epsbearerid),
 	)
-	return seq, err
+	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeDeleteSession)
+		return seq, err
+	}
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeDeleteSession)
+	return seq, nil
 }
 
 func (c *K6GTPv2Client) registerDummyS5S8Session(daddr string, options S5S8SgwParams) (*gtpv2.Session, error) {
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
-		return nil, fmt.Errorf("resolve udp error")
+		return nil, fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err)
 	}
-	localIP := strings.Split(c.Conn.LocalAddr().String(), ":")[0]
-	cteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPC, options.CplaneSgwIE.Teid, localIP, "")
-	uteidIE := ie.NewFullyQualifiedTEID(gtpv2.IFTypeS5S8SGWGTPU, options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
+	localIP := localHost(c.Conn.LocalAddr())
+	cteidIE := ie.NewFullyQualifiedTEID(options.cplaneIfType(), options.CplaneSgwIE.Teid, localIP, "")
+	uteidIE := ie.NewFullyQualifiedTEID(options.uplaneIfType(), options.UplaneIE.Teid, localIP, "").WithInstance(2) // dummy uplane teid
 	s5Session, err := c.Conn.ParseCreateSession(d, c.genS5S8SessionIE(options, cteidIE, uteidIE, localIP)...)
 	if err != nil {
 		return nil, err
@@ -140,19 +200,19 @@ func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8Sg
 		}
 		// teid override
 		if options.CplanePgwIE.Teid == 0 {
-			options.CplanePgwIE.Teid, err = s5Session.GetTEID(gtpv2.IFTypeS5S8PGWGTPC)
+			options.CplanePgwIE.Teid, err = s5Session.GetTEID(options.cplanePeerIfType())
 			if err != nil {
 				return 0, err
 			}
 		}
 		if options.CplaneSgwIE.Teid == 0 {
-			options.CplaneSgwIE.Teid, err = s5Session.GetTEID(gtpv2.IFTypeS5S8SGWGTPC)
+			options.CplaneSgwIE.Teid, err = s5Session.GetTEID(options.cplaneIfType())
 			if err != nil {
 				return 0, err
 			}
 		}
 		if options.UplaneIE.Teid == 0 {
-			options.UplaneIE.Teid, err = s5Session.GetTEID(gtpv2.IFTypeS5S8SGWGTPU)
+			options.UplaneIE.Teid, err = s5Session.GetTEID(options.uplaneIfType())
 			if err != nil {
 				return 0, err
 			}
@@ -173,10 +233,11 @@ func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8Sg
 
 		// todo Support multiple cplane teids
 		ie.NewFullyQualifiedTEID(
-			gtpv2.IFTypeS5S8SGWGTPC,
+			options.cplaneIfType(),
 			options.CplaneSgwIE.Teid,
 			options.CplaneSgwIE.IP,
-			options.CplaneSgwIE.IP6),
+			options.CplaneSgwIE.IP6,
+		),
 		ie.NewAggregateMaximumBitRate(options.Ambrul, options.Ambrdl),
 		ie.NewMobileEquipmentIdentity(options.Mei),
 		ie.NewUETimeZone(9, 0),
@@ -184,7 +245,7 @@ func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8Sg
 		ie.NewBearerContext(
 			ie.NewEPSBearerID(options.Epsbearerid),
 			ie.NewFullyQualifiedTEID(
-				gtpv2.IFTypeS5S8SGWGTPU,
+				options.uplaneIfType(),
 				options.UplaneIE.Teid,
 				options.UplaneIE.IP,
 				options.UplaneIE.IP6,
@@ -192,7 +253,12 @@ func (c *K6GTPv2Client) SendModifyBearerRequestS5S8(daddr string, options S5S8Sg
 		),
 		ie.NewRecovery(0),
 	)
-	return seq, err
+	if err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeModifyBearer)
+		return seq, err
+	}
+	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeModifyBearer)
+	return seq, nil
 }
 
 func (c *K6GTPv2Client) genS5S8SessionIE(options S5S8SgwParams, cteidIE, uteidIE *ie.IE, localIP string) []*ie.IE {
@@ -226,26 +292,98 @@ func (c *K6GTPv2Client) genS5S8SessionIE(options S5S8SgwParams, cteidIE, uteidIE
 }
 
 func (c *K6GTPv2Client) CheckSendCreateSessionRequestS5S8(daddr string, options S5S8SgwParams) (EnumIFCause, error) {
+	start := time.Now()
 	_, seq, err := c.SendCreateSessionRequestS5S8(daddr, options)
 	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, time.Since(start), true)
 		return 0, err
 	}
 	res, err := c.CheckRecvCreateSessionResponse(seq, options.Imsi)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, time.Since(start), err != nil)
 	return res, err
 }
 
 func (c *K6GTPv2Client) CheckSendDeleteSessionRequestS5S8(daddr string, options S5S8SgwParams) (EnumIFCause, error) {
+	start := time.Now()
 	seq, err := c.SendDeleteSessionRequestS5S8(daddr, options)
 	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeDeleteSession, time.Since(start), true)
 		return 0, err
 	}
-	return c.CheckRecvDeleteSessionResponse(seq)
+	res, err := c.CheckRecvDeleteSessionResponse(seq)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeDeleteSession, time.Since(start), err != nil)
+	return res, err
 }
 
 func (c *K6GTPv2Client) CheckSendModifyBearerRequestS5S8(daddr string, options S5S8SgwParams) (EnumIFCause, error) {
+	start := time.Now()
 	seq, err := c.SendModifyBearerRequestS5S8(daddr, options)
 	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeModifyBearer, time.Since(start), true)
 		return 0, err
 	}
-	return c.CheckRecvModifyBearerResponse(seq)
+	res, err := c.CheckRecvModifyBearerResponse(seq)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeModifyBearer, time.Since(start), err != nil)
+	return res, err
+}
+
+// TryCreateSessionS5S8 sends a Create Session Request over S5/S8 and waits for
+// the paired response. Unlike CheckSendCreateSessionRequestS5S8, the returned
+// SendResult exposes the Cause value, the elapsed round-trip time, and a
+// Timeout flag so scripts can build flexible sequences without reaching into
+// CheckRecv* helpers directly.
+func (c *K6GTPv2Client) TryCreateSessionS5S8(daddr string, options S5S8SgwParams) *SendResult {
+	start := time.Now()
+	_, seq, err := c.SendCreateSessionRequestS5S8(daddr, options)
+	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, time.Since(start), true)
+		return newSendError(time.Since(start), err)
+	}
+	cause, recvErr := c.CheckRecvCreateSessionResponse(seq, options.Imsi)
+	elapsed := time.Since(start)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeCreateSession, elapsed, recvErr != nil)
+	if recvErr != nil {
+		r := newSendError(elapsed, recvErr)
+		r.Sequence = seq
+		return r
+	}
+	return newSendOK(seq, uint8(cause), elapsed)
+}
+
+// TryDeleteSessionS5S8 mirrors TryCreateSessionS5S8 for Delete Session.
+func (c *K6GTPv2Client) TryDeleteSessionS5S8(daddr string, options S5S8SgwParams) *SendResult {
+	start := time.Now()
+	seq, err := c.SendDeleteSessionRequestS5S8(daddr, options)
+	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeDeleteSession, time.Since(start), true)
+		return newSendError(time.Since(start), err)
+	}
+	cause, recvErr := c.CheckRecvDeleteSessionResponse(seq)
+	elapsed := time.Since(start)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeDeleteSession, elapsed, recvErr != nil)
+	if recvErr != nil {
+		r := newSendError(elapsed, recvErr)
+		r.Sequence = seq
+		return r
+	}
+	return newSendOK(seq, uint8(cause), elapsed)
+}
+
+// TryModifyBearerS5S8 mirrors TryCreateSessionS5S8 for Modify Bearer.
+func (c *K6GTPv2Client) TryModifyBearerS5S8(daddr string, options S5S8SgwParams) *SendResult {
+	start := time.Now()
+	seq, err := c.SendModifyBearerRequestS5S8(daddr, options)
+	if err != nil {
+		c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeModifyBearer, time.Since(start), true)
+		return newSendError(time.Since(start), err)
+	}
+	cause, recvErr := c.CheckRecvModifyBearerResponse(seq)
+	elapsed := time.Since(start)
+	c.rm.metrics.pushDuration(c.iterCtx(), c.vu.State(), msgTypeModifyBearer, elapsed, recvErr != nil)
+	if recvErr != nil {
+		r := newSendError(elapsed, recvErr)
+		r.Sequence = seq
+		return r
+	}
+	return newSendOK(seq, uint8(cause), elapsed)
 }
