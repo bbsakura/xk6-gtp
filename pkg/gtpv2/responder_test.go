@@ -1,6 +1,7 @@
 package gtpv2
 
 import (
+	"context"
 	"net"
 	"testing"
 	"time"
@@ -156,5 +157,53 @@ func waitFor(t *testing.T, budget time.Duration, cond func() bool) {
 			t.Fatalf("condition not met within %s", budget)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestResponder_CapturesRequestWithUnregisteredNonzeroTEID(t *testing.T) {
+	r, _ := newTestResponder(t, ResponderOptions{
+		Listen:         "127.0.0.1:0",
+		HandleMsgTypes: []uint8{message.MsgTypeCreateBearerRequest},
+	})
+	raddr, err := net.ResolveUDPAddr("udp", r.LocalAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := net.DialUDP("udp", nil, raddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	payload, err := message.Marshal(message.NewCreateBearerRequest(0xabcd, 7, ie.NewEPSBearerID(5)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+
+	req := r.NextRequest(1000)
+	if !req.Ok || req.TEID != 0xabcd {
+		t.Fatalf("NextRequest: %+v", req)
+	}
+}
+
+func TestResponder_NextRequestReturnsWhenIterationIsCancelled(t *testing.T) {
+	r, mi := newTestResponder(t, ResponderOptions{Listen: "127.0.0.1:0"})
+	ctx, cancel := context.WithCancel(context.Background())
+	mi.vu.(*modulestest.VU).CtxField = ctx
+
+	done := make(chan *IncomingRequest, 1)
+	go func() { done <- r.NextRequest(10_000) }()
+	cancel()
+
+	select {
+	case req := <-done:
+		if req.Ok || req.Timeout {
+			t.Fatalf("got %+v, want a cancellation error", req)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("NextRequest ignored the cancelled VU context")
 	}
 }

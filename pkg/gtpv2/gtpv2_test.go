@@ -16,7 +16,7 @@ import (
 // on distinct (msgType, seq) keys resolve to their respective messages,
 // mirroring the correlation the async Promise API relies on.
 func TestWaitForMessage_MultiplexedByKey(t *testing.T) {
-	sessions := &sync.Map{}
+	box := newResponseBox()
 	msgA := message.NewEchoResponse(1)
 	msgB := message.NewEchoResponse(2)
 
@@ -27,7 +27,7 @@ func TestWaitForMessage_MultiplexedByKey(t *testing.T) {
 		ready <- struct{}{}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		m, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, 1)
+		m, err := box.wait(ctx, message.MsgTypeEchoResponse, 1)
 		if err != nil {
 			t.Errorf("waitA: %v", err)
 			return
@@ -38,7 +38,7 @@ func TestWaitForMessage_MultiplexedByKey(t *testing.T) {
 		ready <- struct{}{}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		m, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, 2)
+		m, err := box.wait(ctx, message.MsgTypeEchoResponse, 2)
 		if err != nil {
 			t.Errorf("waitB: %v", err)
 			return
@@ -50,7 +50,7 @@ func TestWaitForMessage_MultiplexedByKey(t *testing.T) {
 	<-ready
 	time.Sleep(10 * time.Millisecond)
 
-	handler := storeMessageHandler(sessions, message.MsgTypeEchoResponse)
+	handler := storeMessageHandler(box, message.MsgTypeEchoResponse)
 	// Deliver out of order (B first, then A) to prove correlation is by key.
 	if err := handler(nil, nil, msgB); err != nil {
 		t.Fatalf("handlerB: %v", err)
@@ -80,23 +80,23 @@ func TestWaitForMessage_MultiplexedByKey(t *testing.T) {
 // TestWaitForMessage_HandlerBeforeWaiter covers the fast-path where the
 // receive handler stores the response before the caller starts waiting.
 func TestWaitForMessage_HandlerBeforeWaiter(t *testing.T) {
-	sessions := &sync.Map{}
+	box := newResponseBox()
 	msg := message.NewEchoResponse(0)
-	h := storeMessageHandler(sessions, message.MsgTypeEchoResponse)
+	h := storeMessageHandler(box, message.MsgTypeEchoResponse)
 	if err := h(nil, nil, msg); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	got, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, msg.Sequence())
+	got, err := box.wait(ctx, message.MsgTypeEchoResponse, msg.Sequence())
 	if err != nil {
-		t.Fatalf("waitForMessage: %v", err)
+		t.Fatalf("wait: %v", err)
 	}
 	if got != msg {
 		t.Fatalf("got %v, want %v", got, msg)
 	}
-	if _, ok := sessions.Load(sessionKey{MessageType: message.MsgTypeEchoResponse, Sequence: msg.Sequence()}); ok {
+	if _, ok := box.entries[sessionKey{MessageType: message.MsgTypeEchoResponse, Sequence: msg.Sequence()}]; ok {
 		t.Fatal("expected pending entry to be cleared")
 	}
 }
@@ -104,7 +104,7 @@ func TestWaitForMessage_HandlerBeforeWaiter(t *testing.T) {
 // TestWaitForMessage_WaiterBeforeHandler covers the rendezvous case where the
 // caller is already waiting when the handler delivers.
 func TestWaitForMessage_WaiterBeforeHandler(t *testing.T) {
-	sessions := &sync.Map{}
+	box := newResponseBox()
 	msg := message.NewEchoResponse(0)
 
 	ready := make(chan struct{})
@@ -113,9 +113,9 @@ func TestWaitForMessage_WaiterBeforeHandler(t *testing.T) {
 		close(ready)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		m, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, msg.Sequence())
+		m, err := box.wait(ctx, message.MsgTypeEchoResponse, msg.Sequence())
 		if err != nil {
-			t.Errorf("waitForMessage: %v", err)
+			t.Errorf("wait: %v", err)
 			return
 		}
 		got <- m
@@ -125,7 +125,7 @@ func TestWaitForMessage_WaiterBeforeHandler(t *testing.T) {
 	// Give the waiter a moment to register.
 	time.Sleep(10 * time.Millisecond)
 
-	if err := storeMessageHandler(sessions, message.MsgTypeEchoResponse)(nil, nil, msg); err != nil {
+	if err := storeMessageHandler(box, message.MsgTypeEchoResponse)(nil, nil, msg); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 
@@ -142,19 +142,19 @@ func TestWaitForMessage_WaiterBeforeHandler(t *testing.T) {
 // TestWaitForMessage_Timeout ensures cancellation propagates instead of busy
 // spinning.
 func TestWaitForMessage_Timeout(t *testing.T) {
-	sessions := &sync.Map{}
+	box := newResponseBox()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 
 	start := time.Now()
-	_, err := waitForMessage(ctx, sessions, message.MsgTypeEchoResponse, 42)
+	_, err := box.wait(ctx, message.MsgTypeEchoResponse, 42)
 	elapsed := time.Since(start)
 
 	if err == nil {
 		t.Fatal("expected error on timeout")
 	}
 	if elapsed >= 200*time.Millisecond {
-		t.Fatalf("waitForMessage took %s, expected ~20ms", elapsed)
+		t.Fatalf("wait took %s, expected ~20ms", elapsed)
 	}
 }
 
@@ -165,10 +165,9 @@ func TestConnect_InitContextRejected(t *testing.T) {
 	rm := New()
 	mi := rm.NewModuleInstance(rt.VU).(*ModuleInstance)
 	cli := &K6GTPv2Client{
-		rm:       mi.rm,
-		vu:       mi.vu,
-		sessions: &sync.Map{},
-		timeout:  3,
+		rm:      mi.rm,
+		vu:      mi.vu,
+		timeout: 3,
 	}
 
 	_, err := cli.Connect(ConnectionOptions{

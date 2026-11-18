@@ -22,6 +22,11 @@ const version = "v0.0.1"
 // (samples, tags) is invoked from the init context.
 var errRunOnly = errors.New("gtpv2: this operation is only available in the run stage (VU state is nil)")
 
+var errNotConnected = errors.New("gtpv2: client is not connected (call connect first)")
+
+// dialEchoTimeout matches the liveness check gtpv2.Dial performs.
+const dialEchoTimeout = 3 * time.Second
+
 type (
 	// RootModule is the global module instance that will create module
 	// instances for each VU.
@@ -94,11 +99,13 @@ type ConnectionOptions struct {
 }
 
 type K6GTPv2Client struct {
-	rm       *RootModule
-	vu       modules.VU
-	Conn     *gtpv2.Conn
-	sessions *sync.Map
-	timeout  int64
+	rm      *RootModule
+	vu      modules.VU
+	Conn    *gtpv2.Conn
+	timeout int64
+
+	// box correlates responses for the current Conn only; see responseBox.
+	box *responseBox
 
 	// connCtx bounds the underlying gtpv2.Conn's read loop lifetime. It is
 	// created lazily in Connect and cancelled by Close. Deliberately not
@@ -107,6 +114,9 @@ type K6GTPv2Client struct {
 	// iteration and break subsequent sends.
 	connCtx    context.Context
 	connCancel context.CancelFunc
+	// serveDone is closed once Serve has returned, i.e. the socket is
+	// released and the local address can be bound again.
+	serveDone chan struct{}
 
 	// hasConnected tracks whether Connect has ever completed on this Client,
 	// so a subsequent Connect (after Close) can emit reconnect metric rather
@@ -117,10 +127,9 @@ type K6GTPv2Client struct {
 // NewClient is the JS constructor for the grpc Client.
 func (c *ModuleInstance) NewK6GTPv2Client(_ sobek.ConstructorCall) *sobek.Object {
 	cli := &K6GTPv2Client{
-		rm:       c.rm,
-		vu:       c.vu,
-		sessions: &sync.Map{},
-		timeout:  3,
+		rm:      c.rm,
+		vu:      c.vu,
+		timeout: 3,
 	}
 	rt := c.vu.Runtime()
 	return rt.ToValue(cli).ToObject(rt)
@@ -137,10 +146,9 @@ func (c *ModuleInstance) NewK6GTPv2ClientWithConnect(call sobek.ConstructorCall)
 	cli := c.rm.connGetPool(options.Saddr)
 	if cli == nil {
 		cli = &K6GTPv2Client{
-			rm:       c.rm,
-			vu:       c.vu,
-			sessions: &sync.Map{},
-			timeout:  3,
+			rm:      c.rm,
+			vu:      c.vu,
+			timeout: 3,
 		}
 		_, err := cli.Connect(options)
 		if err != nil {
@@ -157,6 +165,17 @@ func (c *ModuleInstance) NewK6GTPv2ClientWithConnect(call sobek.ConstructorCall)
 func (c *K6GTPv2Client) requireRunState() error {
 	if c.vu == nil || c.vu.State() == nil {
 		return errRunOnly
+	}
+	return nil
+}
+
+// connReady guards every entry point that touches c.Conn.
+func (c *K6GTPv2Client) connReady() error {
+	if err := c.requireRunState(); err != nil {
+		return err
+	}
+	if c.Conn == nil || c.box == nil {
+		return errNotConnected
 	}
 	return nil
 }
@@ -244,28 +263,32 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 		return false, fmt.Errorf("count %d out of range [0, 255] for GTPv2 Restart Counter", options.Count)
 	}
 
-	// gtpv2.Dial's receive loop lives as long as the ctx we pass in, so bind
-	// it to a Client-scoped context rather than the per-iteration one. Close
-	// cancels it explicitly.
+	// gtpv2.Dial is not used because it hides the Serve goroutine, so Close
+	// could not wait for the socket to be released before a reconnect binds
+	// the same address. The connection lives on a Client-scoped context:
+	// vu.Context() ends at every iteration boundary.
 	c.connCtx, c.connCancel = context.WithCancel(context.Background())
 	// #nosec G115 -- options.Count is bounded to [0, 255] by the check above.
-	conn, err := gtpv2.Dial(
-		c.connCtx,
-		saddr,
-		daddr,
-		uint8(iftype),
-		uint8(options.Count),
-	)
-	if err != nil {
+	conn := gtpv2.NewConn(saddr, uint8(iftype), uint8(options.Count))
+	if err := conn.Listen(c.connCtx); err != nil {
 		c.connCancel()
 		c.connCancel = nil
+		return false, fmt.Errorf("gtpv2 listen %s: %w", saddr, err)
+	}
+	box := newResponseBox()
+	setHandlers(conn, box)
+	serveDone := make(chan struct{})
+	go func() {
+		defer close(serveDone)
+		_ = conn.Serve(c.connCtx)
+	}()
+	c.Conn, c.box, c.serveDone = conn, box, serveDone
+
+	if err := c.echoHandshake(daddr); err != nil {
+		_ = c.shutdown()
 		return false, fmt.Errorf("gtpv2 dial %s -> %s: %w", saddr, daddr, err)
 	}
-	// go-gtp starts the receive loop inside Dial; register handlers immediately
-	// so an early reply cannot slip through unhandled.
-	setHandlers(conn, c.sessions)
 
-	c.Conn = conn
 	if c.hasConnected {
 		c.rm.metrics.pushReconnect(c.iterCtx(), c.vu.State(), options.Daddr)
 	}
@@ -273,89 +296,26 @@ func (c *K6GTPv2Client) Connect(options ConnectionOptions) (bool, error) {
 	return true, nil
 }
 
+func (c *K6GTPv2Client) echoHandshake(daddr net.Addr) error {
+	seq, err := c.Conn.EchoRequest(daddr)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(c.iterCtx(), dialEchoTimeout)
+	defer cancel()
+	_, err = c.box.wait(ctx, message.MsgTypeEchoResponse, seq)
+	return err
+}
+
 func (c *K6GTPv2Client) SetTimeout(timeout int64) {
 	c.timeout = timeout
 }
 
-// pendingEntry rendezvous slot between a request sender waiting for a reply and
-// the receive-side handler that delivers it. One of msg/ch is set depending on
-// which side reached the sessions map first; see waitForMessage and
-// storeMessageHandler.
-type pendingEntry struct {
-	msg message.Message
-	ch  chan struct{}
-}
-
-// GetMessage waits for a GTPv2 response matching (msgType, seq) via a channel
-// rendezvous. Kept as a generic wrapper so the typed CheckRecv* helpers stay
-// concise; no CPU is burned while waiting.
-func GetMessage[PT *T, T any](ctx context.Context, sessions *sync.Map, msgType uint8, seq uint32) (PT, error) {
-	msg, err := waitForMessage(ctx, sessions, msgType, seq)
-	if err != nil {
-		return PT(nil), err
-	}
-	typed, ok := msg.(PT)
-	if !ok {
-		return PT(nil), fmt.Errorf("gtpv2: unexpected message type %T for seq=%d", msg, seq)
-	}
-	return typed, nil
-}
-
-func waitForMessage(ctx context.Context, sessions *sync.Map, msgType uint8, seq uint32) (message.Message, error) {
-	key := sessionKey{MessageType: msgType, Sequence: seq}
-	waiter := &pendingEntry{ch: make(chan struct{})}
-	actual, loaded := sessions.LoadOrStore(key, waiter)
-	if loaded {
-		// Handler beat us — take the buffered message and clear the slot.
-		sessions.Delete(key)
-		return actual.(*pendingEntry).msg, nil
-	}
-	select {
-	case <-waiter.ch:
-		sessions.Delete(key)
-		return waiter.msg, nil
-	case <-ctx.Done():
-		// Best-effort cleanup. If the handler races in between here and
-		// Delete, it will overwrite with its own buffered entry which then
-		// stays until the next call for the same key.
-		sessions.Delete(key)
-		return nil, ctx.Err()
-	}
-}
-
-func setHandlers(conn *gtpv2.Conn, sessions *sync.Map) {
-	for _, mt := range []uint8{
-		message.MsgTypeEchoResponse,
-		message.MsgTypeCreateSessionResponse,
-		message.MsgTypeDeleteSessionResponse,
-		message.MsgTypeModifyBearerResponse,
-	} {
-		conn.AddHandler(mt, storeMessageHandler(sessions, mt))
-	}
-}
-
-type sessionKey struct {
-	MessageType uint8
-	Sequence    uint32
-}
-
-func storeMessageHandler(dst *sync.Map, msgType uint8) func(c *gtpv2.Conn, senderAddr net.Addr, msg message.Message) error {
-	return func(_ *gtpv2.Conn, _ net.Addr, msg message.Message) error {
-		key := sessionKey{MessageType: msgType, Sequence: msg.Sequence()}
-		incoming := &pendingEntry{msg: msg}
-		actual, loaded := dst.LoadOrStore(key, incoming)
-		if !loaded {
-			// No waiter yet — leave the message buffered for the next Load.
-			return nil
-		}
-		waiter := actual.(*pendingEntry)
-		waiter.msg = msg
-		close(waiter.ch)
-		return nil
-	}
-}
-
 func (c *K6GTPv2Client) SendEchoRequest(daddr string) (uint32, error) {
+	if err := c.connReady(); err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeEcho)
+		return 0, err
+	}
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
 		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeEcho)
@@ -370,19 +330,63 @@ func (c *K6GTPv2Client) SendEchoRequest(daddr string) (uint32, error) {
 	return seq, nil
 }
 
-func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ie ...*ie.IE) (*gtpv2.Session, uint32, error) {
+func (c *K6GTPv2Client) SendCreateSessionRequest(daddr string, ies ...*ie.IE) (*gtpv2.Session, uint32, error) {
+	if err := c.connReady(); err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
+		return nil, 0, err
+	}
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
 		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
 		return nil, 0, fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err)
 	}
-	sess, seq, err := c.Conn.CreateSession(d, ie...)
+	// Same as gtpv2.Conn.CreateSession, but the session is registered before
+	// dispatch so the reply's TEID passes go-gtp's validation.
+	sess, err := c.Conn.ParseCreateSession(d, ies...)
 	if err != nil {
 		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
-		return sess, seq, err
+		return nil, 0, err
+	}
+	msg := message.NewCreateSessionRequest(0, 0, ies...)
+	undo := c.registerSenderSession(sess, msg.SenderFTEIDC)
+	seq, err := c.Conn.SendMessageTo(msg, d)
+	if err != nil {
+		undo()
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
+		return nil, seq, err
 	}
 	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeCreateSession)
 	return sess, seq, nil
+}
+
+// registerSenderSession registers sess under the TEID of the Sender F-TEID we
+// advertise, which is the TEID the peer puts in its reply header. Returns a
+// func that undoes the registration.
+func (c *K6GTPv2Client) registerSenderSession(sess *gtpv2.Session, senderFTEID *ie.IE) func() {
+	if sess == nil || senderFTEID == nil {
+		return func() {}
+	}
+	teid, err := senderFTEID.TEID()
+	if err != nil || teid == 0 {
+		return func() {}
+	}
+	c.Conn.RegisterSession(teid, sess)
+	conn := c.Conn
+	return func() { conn.RemoveSession(sess) }
+}
+
+func (c *K6GTPv2Client) registerRawSession(raddr net.Addr, msg message.Message) func() {
+	csr, ok := msg.(*message.CreateSessionRequest)
+	if !ok {
+		return func() {}
+	}
+	sess := gtpv2.NewSession(raddr, &gtpv2.Subscriber{Location: &gtpv2.Location{}})
+	if csr.IMSI != nil {
+		if imsi, err := csr.IMSI.IMSI(); err == nil {
+			sess.IMSI = imsi
+		}
+	}
+	return c.registerSenderSession(sess, csr.SenderFTEIDC)
 }
 
 func (c *K6GTPv2Client) CheckSendEchoRequestWithReturnResponse(daddr string) (bool, error) {
@@ -419,85 +423,106 @@ func (c *K6GTPv2Client) TryEcho(daddr string) *SendResult {
 
 // SendRaw dispatches an arbitrary GTPv2 message (typically built via
 // gtpv2.msg.*) to daddr and returns a SendHandle with the assigned sequence.
-// Pair the sequence with AwaitMessage to inspect the response. Cause and
-// timing are only recorded when the JS side later awaits — request_total is
+// Pair the sequence with AwaitMessage to inspect the response. req_total is
 // emitted here so the counter still fires when the response is intentionally
-// dropped (abnormal-path tests).
+// never awaited (abnormal-path tests); duration and cause are emitted by the
+// await, measured from this dispatch.
 func (c *K6GTPv2Client) SendRaw(daddr string, msg message.Message) *SendHandle {
+	if msg == nil {
+		return &SendHandle{Error: "gtpv2: SendRaw requires a message"}
+	}
 	msgTypeTag := messageTypeTag(msg.MessageType())
+	if err := c.connReady(); err != nil {
+		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeTag)
+		return &SendHandle{Error: err.Error()}
+	}
 	d, err := net.ResolveUDPAddr("udp", daddr)
 	if err != nil {
 		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeTag)
 		return &SendHandle{Error: fmt.Errorf("resolve destination UDP addr %q: %w", daddr, err).Error()}
 	}
+	undo := c.registerRawSession(d, msg)
+	sentAt := time.Now()
 	seq, err := c.Conn.SendMessageTo(msg, d)
 	if err != nil {
+		undo()
 		c.rm.metrics.pushSendError(c.iterCtx(), c.vu.State(), msgTypeTag)
 		return &SendHandle{Error: err.Error()}
 	}
+	c.box.markSent(seq, sentAt)
 	c.rm.metrics.pushRequest(c.iterCtx(), c.vu.State(), msgTypeTag)
 	return &SendHandle{Ok: true, Sequence: seq}
 }
 
 // AwaitMessage waits up to timeoutMs milliseconds for a GTPv2 message with the
-// given type and sequence number. Extracts the Cause IE when the message type
-// carries one; otherwise Cause is 0. A handler for msgType is registered
-// idempotently on the underlying gtpv2.Conn so callers do not have to know in
-// advance which message types to hook up.
+// given type and sequence number. Cause is the Cause IE value, or 0 when the
+// message has none. Response types are captured from Connect onwards; any
+// other type gets its handler here, so only replies to such types can be
+// missed if they arrive before the await.
 func (c *K6GTPv2Client) AwaitMessage(msgType uint8, seq uint32, timeoutMs int64) *AwaitResult {
-	c.Conn.AddHandler(msgType, storeMessageHandler(c.sessions, msgType))
+	if err := c.connReady(); err != nil {
+		return newAwaitError(0, err)
+	}
+	c.ensureHandler(msgType)
 	timeout := effectiveTimeout(timeoutMs, c.timeoutDuration())
 	ctx, cancel := context.WithTimeout(c.iterCtx(), timeout)
 	defer cancel()
-	return c.awaitAndRecord(ctx, msgType, seq)
+	return c.awaitAndRecord(ctx, c.box, msgType, seq)
 }
 
 // AwaitMessageAsync is the Promise-returning sibling of AwaitMessage. Each
 // call spawns a wait goroutine that resolves the Promise once the response
 // arrives (or times out), so scripts can Promise.all over multiple in-flight
-// requests dispatched from the same Client — the sessions sync.Map keyed by
-// (msgType, seq) provides correlation, and each Client owns its own gtpv2.Conn
-// so responses cannot leak to a sibling Client.
+// requests dispatched from the same Client. Only one wait per (msgType, seq)
+// may be pending at a time.
 func (c *K6GTPv2Client) AwaitMessageAsync(msgType uint8, seq uint32, timeoutMs int64) *sobek.Promise {
 	promise, resolve, reject := promises.New(c.vu)
-	if c.Conn == nil {
-		reject(errors.New("gtpv2: AwaitMessageAsync called before Connect"))
+	if err := c.connReady(); err != nil {
+		reject(err)
 		return promise
 	}
-	c.Conn.AddHandler(msgType, storeMessageHandler(c.sessions, msgType))
+	c.ensureHandler(msgType)
 	timeout := effectiveTimeout(timeoutMs, c.timeoutDuration())
-	// Snapshot iteration context up front so a slow event loop that lands
-	// the resolve callback after iteration end still has a valid deadline
-	// parent (WithTimeout will fire the deadline first regardless).
+	// Snapshot iteration context and box up front: the goroutine must not
+	// observe a later Close/Connect swapping them.
 	parent := c.iterCtx()
+	box := c.box
 	go func() {
 		ctx, cancel := context.WithTimeout(parent, timeout)
 		defer cancel()
-		result := c.awaitAndRecord(ctx, msgType, seq)
-		resolve(result)
+		resolve(c.awaitAndRecord(ctx, box, msgType, seq))
 	}()
 	return promise
 }
 
-// awaitAndRecord performs the waitForMessage + metric emission both sync and
-// async paths share. Returns an AwaitResult ready to hand back to JS.
-func (c *K6GTPv2Client) awaitAndRecord(ctx context.Context, msgType uint8, seq uint32) *AwaitResult {
+func (c *K6GTPv2Client) ensureHandler(msgType uint8) {
+	if !isPreregistered(msgType) {
+		c.Conn.AddHandler(msgType, storeMessageHandler(c.box, msgType))
+	}
+}
+
+// awaitAndRecord performs the wait and metric emission both sync and async
+// paths share. Elapsed time is measured from SendRaw's dispatch when known.
+func (c *K6GTPv2Client) awaitAndRecord(ctx context.Context, box *responseBox, msgType uint8, seq uint32) *AwaitResult {
 	start := time.Now()
-	msg, err := waitForMessage(ctx, c.sessions, msgType, seq)
+	msg, err := box.wait(ctx, msgType, seq)
+	if errors.Is(err, errDuplicateAwait) {
+		return newAwaitError(time.Since(start), err)
+	}
+	if sentAt, ok := box.takeSentAt(seq); ok {
+		start = sentAt
+	}
 	elapsed := time.Since(start)
 	tag := messageTypeTag(msgType)
 	state := c.vu.State()
+	c.rm.metrics.pushDuration(c.iterCtx(), state, tag, elapsed, err != nil)
 	switch {
 	case err == nil:
-		cause := extractCause(msg)
-		if state != nil {
-			c.rm.metrics.pushResponse(c.iterCtx(), state, tag, causeString(cause, true))
-		}
+		cause, causeTag := responseCause(msg)
+		c.rm.metrics.pushResponse(c.iterCtx(), state, tag, causeTag)
 		return newAwaitOK(cause, elapsed)
 	case errors.Is(err, context.DeadlineExceeded):
-		if state != nil {
-			c.rm.metrics.pushTimeout(c.iterCtx(), state, tag)
-		}
+		c.rm.metrics.pushTimeout(c.iterCtx(), state, tag)
 		return newAwaitError(elapsed, err)
 	default:
 		return newAwaitError(elapsed, err)
@@ -512,60 +537,111 @@ func effectiveTimeout(requestedMs int64, fallback time.Duration) time.Duration {
 }
 
 // messageTypeTag maps a GTPv2 numeric message type to the low-cardinality tag
-// value used for the metric emissions. Unknown types get their decimal code
-// so the metric never carries an unbounded string.
+// value used for the metric emissions. A request and its response share one
+// tag so thresholds can be written per procedure. Unknown types get their
+// decimal code so the metric never carries an unbounded string.
 func messageTypeTag(t uint8) string {
 	switch t {
-	case message.MsgTypeEchoRequest:
+	case message.MsgTypeEchoRequest, message.MsgTypeEchoResponse:
 		return msgTypeEcho
-	case message.MsgTypeCreateSessionRequest:
+	case message.MsgTypeCreateSessionRequest, message.MsgTypeCreateSessionResponse:
 		return msgTypeCreateSession
-	case message.MsgTypeDeleteSessionRequest:
+	case message.MsgTypeDeleteSessionRequest, message.MsgTypeDeleteSessionResponse:
 		return msgTypeDeleteSession
-	case message.MsgTypeModifyBearerRequest:
+	case message.MsgTypeModifyBearerRequest, message.MsgTypeModifyBearerResponse:
 		return msgTypeModifyBearer
+	case message.MsgTypeCreateBearerRequest, message.MsgTypeCreateBearerResponse:
+		return msgTypeCreateBearer
+	case message.MsgTypeUpdateBearerRequest, message.MsgTypeUpdateBearerResponse:
+		return msgTypeUpdateBearer
+	case message.MsgTypeDeleteBearerRequest, message.MsgTypeDeleteBearerResponse:
+		return msgTypeDeleteBearer
+	case message.MsgTypeDownlinkDataNotification, message.MsgTypeDownlinkDataNotificationAcknowledge:
+		return msgTypeDownlinkDataNotification
 	default:
 		return causeString(t, true) // reuse the numeric formatter
 	}
 }
 
-// extractCause pulls the numeric Cause IE value from any message that carries
-// one, returning 0 when the message does not have Cause.
-func extractCause(msg message.Message) uint8 {
-	if ie := responseCauseIE(msg); ie != nil {
-		if v, err := ie.Cause(); err == nil {
-			return v
-		}
+// responseCause returns the Cause IE value and its metric tag: causeNone when
+// the message type has no Cause IE (Echo), causeUnknown when the IE is
+// missing or cannot be decoded.
+func responseCause(msg message.Message) (uint8, string) {
+	causeIE, hasCause := causeIEOf(msg)
+	if !hasCause {
+		return 0, causeNone
 	}
-	return 0
+	if causeIE == nil {
+		return 0, causeUnknown
+	}
+	v, err := causeIE.Cause()
+	if err != nil {
+		return 0, causeUnknown
+	}
+	return v, causeString(v, true)
 }
 
-// responseCauseIE returns the Cause slot IE for the response message types
-// this extension knows about. Returns nil when the message does not carry
-// Cause. Kept as a type switch so we do not depend on go-gtp exposing a Cause
+// causeIEOf returns the Cause IE and whether the message type defines one.
+// Kept as a type switch so we do not depend on go-gtp exposing a Cause
 // accessor method.
-func responseCauseIE(msg message.Message) *ie.IE {
+func causeIEOf(msg message.Message) (*ie.IE, bool) {
 	switch m := msg.(type) {
-	case *message.CreateSessionResponse:
-		return m.Cause
-	case *message.DeleteSessionResponse:
-		return m.Cause
-	case *message.ModifyBearerResponse:
-		return m.Cause
+	case *message.ChangeNotificationResponse:
+		return m.Cause, true
+	case *message.ContextAcknowledge:
+		return m.Cause, true
+	case *message.ContextResponse:
+		return m.Cause, true
 	case *message.CreateBearerResponse:
-		return m.Cause
-	case *message.UpdateBearerResponse:
-		return m.Cause
+		return m.Cause, true
+	case *message.CreateSessionResponse:
+		return m.Cause, true
+	case *message.DeleteBearerFailureIndication:
+		return m.Cause, true
 	case *message.DeleteBearerResponse:
-		return m.Cause
+		return m.Cause, true
+	case *message.DeletePDNConnectionSetResponse:
+		return m.Cause, true
+	case *message.DeleteSessionResponse:
+		return m.Cause, true
+	case *message.DetachAcknowledge:
+		return m.Cause, true
+	case *message.DownlinkDataNotificationAcknowledge:
+		return m.Cause, true
+	case *message.DownlinkDataNotificationFailureIndication:
+		return m.Cause, true
+	case *message.ModifyAccessBearersResponse:
+		return m.Cause, true
+	case *message.ModifyBearerFailureIndication:
+		return m.Cause, true
+	case *message.ModifyBearerResponse:
+		return m.Cause, true
+	case *message.PGWRestartNotificationAcknowledge:
+		return m.Cause, true
+	case *message.ReleaseAccessBearersResponse:
+		return m.Cause, true
+	case *message.ResumeAcknowledge:
+		return m.Cause, true
+	case *message.SuspendAcknowledge:
+		return m.Cause, true
+	case *message.UpdateBearerResponse:
+		return m.Cause, true
+	case *message.UpdatePDNConnectionSetResponse:
+		return m.Cause, true
+	case *message.Generic:
+		for _, i := range m.IEs {
+			if i != nil && i.Type == ie.Cause {
+				return i, true
+			}
+		}
 	}
-	return nil
+	return nil, false
 }
 
 // TryCreateSessionRaw sends a Create Session Request built from a
 // user-supplied list of IEs (typically composed via gtpv2.ie.*) and waits for
-// the paired response. imsi is required to look up the session on the receive
-// side; it must be present in the IE list.
+// the paired response. imsi is used to attach the peer's F-TEID to the local
+// session when one was registered; the response is awaited either way.
 //
 // Use this instead of TryCreateSessionS5S8 when you need to omit, mutate, or
 // add IEs beyond what S5S8SgwParams exposes — for example to reproduce a
@@ -619,7 +695,7 @@ func (c *K6GTPv2Client) recordRecvOutcome(msgType string, cause EnumIFCause, err
 func (c *K6GTPv2Client) CheckRecvEchoResponse(seq uint32) (bool, error) {
 	ctx, cancel := c.recvCtx()
 	defer cancel()
-	_, err := GetMessage[*message.EchoResponse](ctx, c.sessions, message.MsgTypeEchoResponse, seq)
+	_, err := GetMessage[*message.EchoResponse](ctx, c.box, message.MsgTypeEchoResponse, seq)
 	c.recordRecvOutcome(msgTypeEcho, 0, err)
 	if err != nil {
 		return false, err
@@ -627,16 +703,14 @@ func (c *K6GTPv2Client) CheckRecvEchoResponse(seq uint32) (bool, error) {
 	return true, nil
 }
 
+// CheckRecvCreateSessionResponse waits for the response first and only then
+// looks the session up by IMSI: requests that omit the Sender F-TEID have no
+// registered session, but their rejection Cause must still be reported.
 func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32, imsi string) (EnumIFCause, error) {
 	causeRes := EnumIFCause(0)
-	sess, err := c.Conn.GetSessionByIMSI(imsi)
-	if err != nil {
-		return causeRes, err
-	}
-
 	ctx, cancel := c.recvCtx()
 	defer cancel()
-	res, err := GetMessage[*message.CreateSessionResponse](ctx, c.sessions, message.MsgTypeCreateSessionResponse, seq)
+	res, err := GetMessage[*message.CreateSessionResponse](ctx, c.box, message.MsgTypeCreateSessionResponse, seq)
 	if err != nil {
 		c.recordRecvOutcome(msgTypeCreateSession, 0, err)
 		return causeRes, err
@@ -650,6 +724,13 @@ func (c *K6GTPv2Client) CheckRecvCreateSessionResponse(seq uint32, imsi string) 
 		causeRes = EnumIFCause(cause)
 	}
 	c.recordRecvOutcome(msgTypeCreateSession, causeRes, nil)
+	if c.Conn == nil {
+		return causeRes, nil
+	}
+	sess, err := c.Conn.GetSessionByIMSI(imsi)
+	if err != nil {
+		return causeRes, nil
+	}
 	if fteidcIE := res.PGWS5S8FTEIDC; fteidcIE != nil {
 		it, err := fteidcIE.InterfaceType()
 		if err != nil {
@@ -668,7 +749,7 @@ func (c *K6GTPv2Client) CheckRecvDeleteSessionResponse(seq uint32) (EnumIFCause,
 	causeRes := EnumIFCause(0)
 	ctx, cancel := c.recvCtx()
 	defer cancel()
-	res, err := GetMessage[*message.DeleteSessionResponse](ctx, c.sessions, message.MsgTypeDeleteSessionResponse, seq)
+	res, err := GetMessage[*message.DeleteSessionResponse](ctx, c.box, message.MsgTypeDeleteSessionResponse, seq)
 	if err != nil {
 		c.recordRecvOutcome(msgTypeDeleteSession, 0, err)
 		return causeRes, err
@@ -689,7 +770,7 @@ func (c *K6GTPv2Client) CheckRecvModifyBearerResponse(seq uint32) (EnumIFCause, 
 	causeRes := EnumIFCause(0)
 	ctx, cancel := c.recvCtx()
 	defer cancel()
-	res, err := GetMessage[*message.ModifyBearerResponse](ctx, c.sessions, message.MsgTypeModifyBearerResponse, seq)
+	res, err := GetMessage[*message.ModifyBearerResponse](ctx, c.box, message.MsgTypeModifyBearerResponse, seq)
 	if err != nil {
 		c.recordRecvOutcome(msgTypeModifyBearer, 0, err)
 		return causeRes, err
@@ -706,15 +787,29 @@ func (c *K6GTPv2Client) CheckRecvModifyBearerResponse(seq uint32) (EnumIFCause, 
 	return causeRes, nil
 }
 
+// Close releases the socket and fails every pending wait. It returns only
+// after the receive loop has exited, so an immediate Connect can rebind the
+// same source address.
 func (c *K6GTPv2Client) Close() error {
+	return c.shutdown()
+}
+
+func (c *K6GTPv2Client) shutdown() error {
+	if c.box != nil {
+		c.box.close()
+	}
 	if c.connCancel != nil {
 		c.connCancel()
 		c.connCancel = nil
 	}
-	if c.Conn == nil {
-		return nil
+	var err error
+	if c.Conn != nil {
+		err = c.Conn.Close()
+		c.Conn = nil
 	}
-	err := c.Conn.Close()
-	c.Conn = nil
+	if c.serveDone != nil {
+		<-c.serveDone
+		c.serveDone = nil
+	}
 	return err
 }

@@ -20,6 +20,11 @@ const (
 	msgTypeDeleteSession = "delete_session"
 	msgTypeModifyBearer  = "modify_bearer"
 
+	msgTypeCreateBearer             = "create_bearer"
+	msgTypeUpdateBearer             = "update_bearer"
+	msgTypeDeleteBearer             = "delete_bearer"
+	msgTypeDownlinkDataNotification = "downlink_data_notification"
+
 	// causeNone marks responses whose message type does not carry a Cause IE
 	// (Echo). Kept distinct from "unknown" (Cause absent or unparseable) so
 	// dashboards can spot decoding failures without hiding successful echoes.

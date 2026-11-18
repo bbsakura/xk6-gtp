@@ -69,6 +69,11 @@ type ResponderOptions struct {
 	// QueueSize bounds the internal request buffer. Defaults to 32; incoming
 	// requests are dropped (with the error metric ticking) once full.
 	QueueSize int `json:"queue_size"`
+	// ValidateTEID enables go-gtp's check that a nonzero header TEID belongs
+	// to a registered session. The responder never registers sessions, so
+	// it is off by default; otherwise Create/Update/Delete Bearer Requests
+	// carrying normal TEIDs would be dropped before capture.
+	ValidateTEID bool `json:"validate_teid" js:"validate_teid"`
 }
 
 // NewK6GTPv2Responder is the JS constructor for the responder. Arguments are
@@ -122,6 +127,9 @@ func (mi *ModuleInstance) newResponder(opts ResponderOptions) (*K6GTPv2Responder
 
 	// #nosec G115 -- opts.Count is bounded to [0, 255] by the check above.
 	conn := gtpv2.NewConn(laddr, uint8(iftype), uint8(opts.Count))
+	if !opts.ValidateTEID {
+		conn.DisableValidation()
+	}
 
 	r := &K6GTPv2Responder{
 		rm:        mi.rm,
@@ -182,12 +190,16 @@ func (r *K6GTPv2Responder) captureHandler() func(c *gtpv2.Conn, senderAddr net.A
 }
 
 // NextRequest returns the next captured request, waiting up to timeoutMs
-// milliseconds. When the deadline expires (or the responder was closed) the
-// returned struct has Ok=false and Timeout=true.
+// milliseconds. When the deadline expires the returned struct has Ok=false
+// and Timeout=true; when the responder is closed or the VU's iteration is
+// cancelled, Ok=false with Error set.
 func (r *K6GTPv2Responder) NextRequest(timeoutMs int64) *IncomingRequest {
 	if timeoutMs <= 0 {
 		timeoutMs = 3000
 	}
+	// Only this call observes the VU context; the listener itself keeps
+	// living across iterations.
+	vuDone := r.vuDone()
 	select {
 	case req, ok := <-r.requests:
 		if !ok {
@@ -198,7 +210,19 @@ func (r *K6GTPv2Responder) NextRequest(timeoutMs int64) *IncomingRequest {
 		return &IncomingRequest{Ok: false, Timeout: true}
 	case <-r.serveCtx.Done():
 		return &IncomingRequest{Ok: false, Error: "responder closed"}
+	case <-vuDone:
+		return &IncomingRequest{Ok: false, Error: "iteration cancelled"}
 	}
+}
+
+func (r *K6GTPv2Responder) vuDone() <-chan struct{} {
+	if r.vu == nil {
+		return nil
+	}
+	if ctx := r.vu.Context(); ctx != nil {
+		return ctx.Done()
+	}
+	return nil
 }
 
 // RespondTo sends a GTPv2 response back to the sender of req. Sequence and
