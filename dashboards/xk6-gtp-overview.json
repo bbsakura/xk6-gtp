@@ -17,7 +17,7 @@
     {"type": "panel", "id": "piechart", "name": "Pie chart", "version": ""}
   ],
   "annotations": {"list": []},
-  "description": "Overview of xk6-gtp emitted metrics: request throughput, error rate, timeouts, latency percentiles, cause distribution, send errors, and Client reconnects. Queries target the metric names produced by xk6-output-prometheus-remote (k6_<metric>).",
+  "description": "Overview of xk6-gtp emitted metrics: request throughput, error rate, timeouts, latency percentiles, cause distribution, send errors, and Client reconnects. Queries target the names produced by the k6 Prometheus remote-write output: k6_<counter>_total for Counters, k6_<trend>_<stat> (seconds) for Trends.",
   "editable": true,
   "graphTooltip": 1,
   "id": null,
@@ -51,7 +51,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(k6_gtpv2_req_total[$__rate_interval]))",
+          "expr": "sum(rate(k6_gtpv2_req_total_total[$__rate_interval]))",
           "legendFormat": "req/s",
           "refId": "A"
         }
@@ -61,7 +61,7 @@
       "id": 2,
       "type": "stat",
       "title": "Send error rate",
-      "description": "gtpv2_send_error_total / gtpv2_req_total. Green under 1%, yellow to 5%, red above.",
+      "description": "gtpv2_send_error_total / (gtpv2_req_total + gtpv2_send_error_total): share of dispatch attempts that failed. Green under 1%, yellow to 5%, red above.",
       "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 4, "w": 8, "x": 8, "y": 0},
       "fieldConfig": {
@@ -86,7 +86,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(k6_gtpv2_send_error_total[$__rate_interval])) / clamp_min(sum(rate(k6_gtpv2_req_total[$__rate_interval])), 1)",
+          "expr": "(sum(rate(k6_gtpv2_send_error_total_total[$__rate_interval])) or vector(0)) / clamp_min((sum(rate(k6_gtpv2_req_total_total[$__rate_interval])) or vector(0)) + (sum(rate(k6_gtpv2_send_error_total_total[$__rate_interval])) or vector(0)), 1e-9)",
           "legendFormat": "error rate",
           "refId": "A"
         }
@@ -120,7 +120,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(k6_gtpv2_timeout_total[$__rate_interval]))",
+          "expr": "sum(rate(k6_gtpv2_timeout_total_total[$__rate_interval]))",
           "legendFormat": "timeouts/s",
           "refId": "A"
         }
@@ -130,13 +130,13 @@
       "id": 4,
       "type": "timeseries",
       "title": "Round-trip latency by msg_type (p50 / p95 / p99)",
-      "description": "gtpv2_req_duration Trend converted by the Prometheus remote-write output into avg/p90/p95/p99/med gauges. Panel plots p50/p95/p99 per msg_type.",
+      "description": "gtpv2_req_duration Trend exported by the Prometheus remote-write output as one gauge per configured stat (in seconds). Requires K6_PROMETHEUS_RW_TREND_STATS to include med, p(95) and p(99).",
       "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
       "fieldConfig": {
         "defaults": {
           "color": {"mode": "palette-classic"},
-          "unit": "ms",
+          "unit": "s",
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "linear",
@@ -174,7 +174,7 @@
         "overrides": []
       },
       "options": {
-        "reduceOptions": {"values": false, "calcs": ["sum"], "fields": ""},
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
         "pieType": "donut",
         "tooltip": {"mode": "single"},
         "legend": {"displayMode": "table", "placement": "right", "values": ["value", "percent"]},
@@ -182,7 +182,9 @@
       },
       "targets": [
         {
-          "expr": "sum by (cause, msg_type) (increase(k6_gtpv2_resp_cause[$__range]))",
+          "expr": "sum by (cause, msg_type) (increase(k6_gtpv2_resp_cause_total[$__range]))",
+          "instant": true,
+          "range": false,
           "legendFormat": "{{msg_type}} / cause={{cause}}",
           "refId": "A"
         }
@@ -216,7 +218,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (msg_type) (rate(k6_gtpv2_send_error_total[$__rate_interval]))",
+          "expr": "sum by (msg_type) (rate(k6_gtpv2_send_error_total_total[$__rate_interval]))",
           "legendFormat": "{{msg_type}}",
           "refId": "A"
         }
@@ -250,7 +252,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (peer) (increase(k6_gtpv2_conn_reconnect_total[$__range]))",
+          "expr": "sum by (peer) (increase(k6_gtpv2_conn_reconnect_total_total[$__range]))",
           "legendFormat": "{{peer}}",
           "refId": "A"
         }
