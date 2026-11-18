@@ -39,12 +39,13 @@ export default function () {
         ambrul: 100000000,
         ambrdl: 100000000,
 
-        // Explicit interface-type overrides. Zero would fall back to the
-        // S5/S8 SGW defaults; set them from gtpv2.IFType.* to point the
-        // FTEIDs at a different reference point.
-        iftype_cplane: gtpv2.IFType.S5S8_SGW_GTPC,
-        iftype_uplane: gtpv2.IFType.S5S8_SGW_GTPU,
-        iftype_cplane_peer: gtpv2.IFType.S5S8_PGW_GTPC,
+        // Explicit interface-type overrides. Omitted keys fall back to the
+        // S5/S8 SGW defaults (0 is a real override: S1U_ENODEB_GTPU); set
+        // them from gtpv2.IFType.* to point the FTEIDs at a different
+        // reference point.
+        if_type_cplane: gtpv2.IFType.S5S8_SGW_GTPC,
+        if_type_uplane: gtpv2.IFType.S5S8_SGW_GTPU,
+        if_type_cplane_peer: gtpv2.IFType.S5S8_PGW_GTPC,
     });
     check(csr, {
         'csr accepted with explicit IfTypes': (r) =>
@@ -54,7 +55,7 @@ export default function () {
     const dsr = client.tryDeleteSessionS5S8('', {
         imsi: '123451234567891',
         epsbearerid: 1,
-        iftype_cplane_peer: gtpv2.IFType.S5S8_PGW_GTPC,
+        if_type_cplane_peer: gtpv2.IFType.S5S8_PGW_GTPC,
     });
     check(dsr, {
         'dsr accepted with explicit peer IfType': (r) =>
