@@ -21,7 +21,7 @@ func TestS5S8SgwParams_IfTypeDefaults(t *testing.T) {
 }
 
 func TestS5S8SgwParams_IfTypeOverrides(t *testing.T) {
-	cplane, uplane, peer := uint8(gtpv2.IFTypeS11S4SGWGTPC), uint8(gtpv2.IFTypeS1USGWGTPU), uint8(gtpv2.IFTypeS11MMEGTPC)
+	cplane, uplane, peer := gtpv2.IFTypeS11S4SGWGTPC, gtpv2.IFTypeS1USGWGTPU, gtpv2.IFTypeS11MMEGTPC
 	p := S5S8SgwParams{
 		IfTypeCplane:     &cplane,
 		IfTypeUplane:     &uplane,
@@ -39,7 +39,7 @@ func TestS5S8SgwParams_IfTypeOverrides(t *testing.T) {
 }
 
 func TestS5S8SgwParams_ExplicitZeroIfTypeIsAnOverride(t *testing.T) {
-	zero := uint8(gtpv2.IFTypeS1UeNodeBGTPU)
+	zero := gtpv2.IFTypeS1UeNodeBGTPU
 	p := S5S8SgwParams{IfTypeUplane: &zero}
 	if got := p.uplaneIfType(); got != 0 {
 		t.Errorf("uplaneIfType with explicit 0: got %d, want 0", got)

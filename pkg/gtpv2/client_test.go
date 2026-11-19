@@ -7,13 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bbsakura/xk6-gtp/pkg/refpgw"
 	"github.com/wmnsk/go-gtp/gtpv2"
 	"github.com/wmnsk/go-gtp/gtpv2/ie"
 	"github.com/wmnsk/go-gtp/gtpv2/message"
 	"go.k6.io/k6/js/modulestest"
 	"go.k6.io/k6/lib"
 	"go.k6.io/k6/metrics"
+
+	"github.com/bbsakura/xk6-gtp/pkg/refpgw"
 )
 
 func startRefPGW(t *testing.T) string {
@@ -212,7 +213,7 @@ func TestClient_TryCreateSessionAppliesCplaneOverrideWithAutoTEID(t *testing.T) 
 		t.Fatalf("Connect: %v", err)
 	}
 
-	override := uint8(gtpv2.IFTypeS11S4SGWGTPC)
+	override := gtpv2.IFTypeS11S4SGWGTPC
 	p := s5s8Params()
 	p.IfTypeCplane = &override
 	if r := cli.TryCreateSessionS5S8(pgw, p); !r.Ok || r.Cause != gtpv2.CauseRequestAccepted {
